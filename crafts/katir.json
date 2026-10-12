@@ -1,0 +1,22 @@
+{
+	"name": "Katır",
+	"description": "Kargo uçağı: 4 paraşütlü sandık, J-40 motor, düz kanat, hava freni. Yardım bırakma görevleri için.",
+	"paint": {"scheme": "deniz", "number": "K-12"},
+	"parts": [
+		{"part": "nose_cone",        "pos": [0, 0, -2.25]},
+		{"part": "cockpit_mk1",      "pos": [0, 0, 0]},
+		{"part": "cargo_bay",        "pos": [0, 0, 3.0]},
+		{"part": "tank_long",        "pos": [0, 0, 6.5]},
+		{"part": "jet_engine_small", "pos": [0, 0, 9.44]},
+
+		{"part": "wing_straight",    "pos": [3.4, -0.25, 4.6], "rot": [2, 0, 3], "mirror": true},
+		{"part": "elevon",           "pos": [4.6, -0.25, 5.65], "mirror": true},
+		{"part": "stabilator",       "pos": [1.65, 0, 8.3], "mirror": true},
+		{"part": "fin_vertical",     "pos": [0, 1.8, 8.1], "rot": [0, 0, 90]},
+		{"part": "rudder",           "pos": [0, 1.6, 9.45], "rot": [0, 0, 90]},
+		{"part": "airbrake",         "pos": [0, 0.7, 6.0]},
+
+		{"part": "gear_nose",        "pos": [0, -0.6, -0.9]},
+		{"part": "gear_main",        "pos": [1.2, -0.6, 5.6], "mirror": true}
+	]
+}

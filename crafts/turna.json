@@ -1,0 +1,27 @@
+{
+	"name": "Turna",
+	"description": "Çift turbofanlı yolcu uçağı: 4 yolcu kabini (24 koltuk), okvari kanat, T kuyruk.",
+	"paint": {"scheme": "sivil", "number": "TC-TRN"},
+	"parts": [
+		{"part": "nose_cone",        "pos": [0, 0, -2.25]},
+		{"part": "cockpit_civil",    "pos": [0, 0, 0]},
+		{"part": "passenger_cabin",  "pos": [0, 0, 3.0]},
+		{"part": "passenger_cabin",  "pos": [0, 0, 6.0]},
+		{"part": "passenger_cabin",  "pos": [0, 0, 9.0]},
+		{"part": "passenger_cabin",  "pos": [0, 0, 12.0]},
+		{"part": "tank_long",        "pos": [0, 0, 15.5]},
+		{"part": "tail_cone",        "pos": [0, 0, 18.25]},
+
+		{"part": "wing_main",        "pos": [2.6, -0.35, 7.6], "rot": [2, 0, 3], "mirror": true},
+		{"part": "wing_main",        "pos": [6.4, -0.15, 8.6], "rot": [2, 0, 3], "mirror": true},
+		{"part": "elevon",           "pos": [7.35, -0.15, 10.25], "mirror": true},
+		{"part": "turbofan",         "pos": [4.2, -1.35, 6.9], "mirror": true},
+
+		{"part": "fin_vertical",     "pos": [0, 1.8, 16.4], "rot": [0, 0, 90]},
+		{"part": "rudder",           "pos": [0, 1.6, 17.75], "rot": [0, 0, 90]},
+		{"part": "stabilator",       "pos": [1.65, 3.0, 17.4], "mirror": true},
+
+		{"part": "gear_nose",        "pos": [0, -0.6, -0.9]},
+		{"part": "gear_main",        "pos": [1.4, -0.6, 10.0], "mirror": true}
+	]
+}

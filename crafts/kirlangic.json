@@ -1,0 +1,22 @@
+{
+	"name": "Kırlangıç",
+	"description": "Pervaneli hafif yolcu uçağı: 6 koltuklu kabin, düz kanat, fren paraşütü. Kurtarma ve yolcu görevleri için.",
+	"paint": {"scheme": "sivil", "number": "TC-KRL"},
+	"parts": [
+		{"part": "prop_engine",      "pos": [0, 0, -2.3]},
+		{"part": "cockpit_civil",    "pos": [0, 0, 0]},
+		{"part": "passenger_cabin",  "pos": [0, 0, 3.0]},
+		{"part": "tank_short",       "pos": [0, 0, 5.5]},
+		{"part": "nose_cone",        "pos": [0, 0, 7.25], "rot": [0, 180, 0]},
+
+		{"part": "wing_straight",    "pos": [3.4, -0.25, 2.7], "rot": [2, 0, 4], "mirror": true},
+		{"part": "elevon",           "pos": [4.6, -0.25, 3.75], "mirror": true},
+		{"part": "stabilator",       "pos": [1.65, 0, 6.6], "mirror": true},
+		{"part": "fin_vertical",     "pos": [0, 1.8, 6.4], "rot": [0, 0, 90]},
+		{"part": "rudder",           "pos": [0, 1.6, 7.75], "rot": [0, 0, 90]},
+		{"part": "drag_chute",       "pos": [0, 0.3, 7.6]},
+
+		{"part": "gear_nose",        "pos": [0, -0.6, -0.9]},
+		{"part": "gear_main",        "pos": [1.2, -0.6, 3.5], "mirror": true}
+	]
+}

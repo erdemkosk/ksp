@@ -1,0 +1,27 @@
+{
+	"name": "Kartal-1",
+	"description": "Tek motorlu hafif avcı. Radar burnu, 20 mm top podu, iki IR füze.",
+	"paint": {"scheme": "gri", "number": "34"},
+	"parts": [
+		{"part": "radar_nose",  "pos": [0, 0, -9.65]},
+		{"part": "cockpit_mk1", "pos": [0, 0, -7.25]},
+		{"part": "tank_long",   "pos": [0, 0, -3.75]},
+		{"part": "tank_long",   "pos": [0, 0, 0.25]},
+		{"part": "jet_engine",  "pos": [0, 0, 3.5]},
+
+		{"part": "gun_pod",     "pos": [0.72, -0.35, -4.3]},
+
+		{"part": "wing_main",   "pos": [2.65, -0.25, -0.5], "rot": [2, 0, 0], "mirror": true},
+		{"part": "elevon",      "pos": [3.6, -0.25, 1.15], "mirror": true},
+		{"part": "missile_rail", "pos": [3.3, -0.55, -0.6], "mirror": true},
+
+		{"part": "stabilator",  "pos": [1.6, 0, 4.0], "mirror": true},
+		{"part": "wing_small",  "pos": [0, 1.6, 3.6], "rot": [0, 0, 90]},
+		{"part": "elevon",      "pos": [0, 1.6, 4.75], "rot": [0, 0, 90]},
+
+		{"part": "flare_pod",   "pos": [0, -0.78, 1.8]},
+
+		{"part": "gear_nose",   "pos": [0, -0.6, -6.5]},
+		{"part": "gear_main",   "pos": [1.2, -0.6, -0.3], "mirror": true}
+	]
+}
