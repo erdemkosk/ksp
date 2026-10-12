@@ -24,6 +24,7 @@ const KEY_BINDINGS := {
 	"time_cycle": [KEY_F6],
 	"time_faster": [KEY_PERIOD],
 	"time_slower": [KEY_COMMA],
+	"time_normal": [KEY_SLASH],
 	"eva": [KEY_F],
 	"jump": [KEY_SPACE],
 	"canopy_toggle": [KEY_K],
@@ -37,6 +38,8 @@ const KEY_BINDINGS := {
 	"spawn_enemy": [KEY_F7],
 	"hangar": [KEY_J],
 	"flare": [KEY_O],
+	"chaff": [KEY_SEMICOLON],       # Türkçe klavyede Ş
+	"cm_auto": [KEY_APOSTROPHE],    # Türkçe klavyede İ: karşı tedbir otomatik programı
 	"mouse_flight": [KEY_Y],
 	"pause": [KEY_ESCAPE],
 	"cursor_toggle": [KEY_TAB],
@@ -120,6 +123,11 @@ func _register_inputs() -> void:
 			var ev := InputEventKey.new()
 			ev.physical_keycode = key
 			InputMap.action_add_event(action, ev)
+			if action.begins_with("time_"):
+				# klavye düzeninden bağımsız: Türkçe Q'da da "," ve "." tuşları çalışsın
+				var lv := InputEventKey.new()
+				lv.keycode = key
+				InputMap.action_add_event(action, lv)
 	for action: String in JOY_BINDINGS:
 		for spec: Array in JOY_BINDINGS[action]:
 			if spec[0] == "axis":

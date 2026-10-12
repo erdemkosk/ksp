@@ -96,6 +96,62 @@ static func wing(span: float, root_chord: float, tip_chord: float, sweep: float,
 	return _mesh(verts, normals, uvs, indices)
 
 
+## Çok panelli kanat (kırık delta, uçan kanat): secs = [Vector3(x, hücum kenarı z, veter), ...]
+## kökten uca. Her bölüm NACA kesiti; bölümler arası yüzey, kök ve uç kapakları.
+static func wing_sections(secs: Array, thickness: float) -> ArrayMesh:
+	var pts := 12
+	var ring: Array[Vector2] = []
+	for k in range(pts, -1, -1):
+		var x := (1.0 - cos(PI * k / pts)) * 0.5
+		ring.append(Vector2(x, _naca(x, thickness)))
+	for k in range(1, pts + 1):
+		var x := (1.0 - cos(PI * k / pts)) * 0.5
+		ring.append(Vector2(x, -_naca(x, thickness)))
+	var ring_normals: Array[Vector2] = []
+	for k in ring.size():
+		var t := ring[mini(k + 1, ring.size() - 1)] - ring[maxi(k - 1, 0)]
+		ring_normals.append(Vector2(t.y, -t.x).normalized())
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var indices := PackedInt32Array()
+	var n := ring.size()
+	var rings_pos: Array = []
+	for si in secs.size():
+		var s: Vector3 = secs[si]
+		var sec := []
+		for k in n:
+			var v := Vector3(s.x, ring[k].y * s.z, s.y + ring[k].x * s.z)
+			sec.append(v)
+			verts.append(v)
+			normals.append(Vector3(0, ring_normals[k].y, ring_normals[k].x))
+			uvs.append(Vector2(ring[k].x, float(si) / maxf(secs.size() - 1, 1)))
+		rings_pos.append(sec)
+	for si in secs.size() - 1:
+		var a := si * n
+		var b := (si + 1) * n
+		for k in n - 1:
+			indices.append_array([a + k, a + k + 1, b + k, a + k + 1, b + k + 1, b + k])
+	for end in [0, secs.size() - 1]:
+		var sec: Array = rings_pos[end]
+		var base := verts.size()
+		var center := Vector3.ZERO
+		for v in sec:
+			center += v
+		center /= sec.size()
+		var nrm := Vector3(-1 if end == 0 else 1, 0, 0)
+		verts.append(center)
+		normals.append(nrm)
+		uvs.append(Vector2(0.5, 0.5))
+		for v in sec:
+			verts.append(v)
+			normals.append(nrm)
+			uvs.append(Vector2(0.5, 0.5))
+		for k in sec.size() - 1:
+			indices.append_array([base, base + 1 + k, base + 2 + k])
+	return _mesh(verts, normals, uvs, indices)
+
+
 static func _naca(x: float, t: float) -> float:
 	return 5.0 * t * (0.2969 * sqrt(x) - 0.1260 * x - 0.3516 * x * x + 0.2843 * x * x * x - 0.1036 * x * x * x * x)
 

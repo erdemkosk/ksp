@@ -73,12 +73,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		set_preset((preset + 1) % Preset.size())
 	elif event.is_action_pressed("time_cycle"):
 		_next_time_preset()
-	elif event.is_action_pressed("time_faster"):
-		time_scale_index = mini(time_scale_index + 1, TIME_SCALES.size() - 1)
-		changed.emit()
-	elif event.is_action_pressed("time_slower"):
-		time_scale_index = maxi(time_scale_index - 1, 0)
-		changed.emit()
 
 
 func set_preset(p: int, instant := false) -> void:

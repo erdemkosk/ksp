@@ -8,11 +8,11 @@ const HELP := [
 	["SİSTEMLER", [["G", "iniş takımı"], ["B / P", "fren / park freni"], ["N", "kumanda paneli"], ["I", "motor aç / kapa"], ["L", "ışıklar"],
 		["K", "kanopi"], ["F", "dışarı çık / uçağa bin"], ["R / H", "piste dön / havada başla"]]],
 	["FARE / PANEL", [["TAB", "fareyle uçuş aç / kapa (isteğe bağlı)"], ["N", "paneller (savaş, kumanda, pencereler)"], ["Alt (basılı)", "geçici imleç"], ["Esc", "duraklat"]]],
-	["EYLEMLER", [["1-9", "eylem paneli (paraşüt, hava freni, takım, pilot indirsin, uçuşu bitir)"], ["⌫ ⌫", "FIRLATMA KOLTUĞU"], ["F2", "telsiz: kalkış / iniş izni, yön, hava, mayday"], ["M", "harita"], ["F9 / F10", "kaydet / kayıttan devam"], ["F8", "hedefleme podu (numpad: kaydır 8/2/4/6, +/- yakın, 5 kilit, 0 mod)"], ["F11", "tam ekran"], ["Enter", "inince uçuşu / görevi bitir"]]],
+	["EYLEMLER", [["1-9", "eylem paneli, sabit tuşlar: 1 takım · 2 motor · 3 kanopi · 4 fişek · 5 hava freni · 6 paraşüt · 7 JATO · 8 pod · 9 pilot indirsin · 0 yakıt boşalt"], ["⌫ ⌫", "FIRLATMA KOLTUĞU"], ["F2", "telsiz: kalkış / iniş izni, yön, hava, mayday"], ["M", "harita"], ["F9 / F10", "kaydet / kayıttan devam"], ["F8", "hedefleme podu (numpad: kaydır 8/2/4/6, +/- yakın, 5 kilit, 0 mod)"], ["F11", "tam ekran"], ["Enter", "inince uçuşu / görevi bitir"]]],
 	["SAVAŞ", [["Space", "ateş (füze kilitsiz de atılır)"], ["V", "silah seç (top / füze / bomba)"], ["F4 / tık", "radar hedefi seç"], ["O", "flare at"], ["F7", "saldırgan düşman"], ["J", "hangar"]]],
 	["KAMERA", [["C", "takip / kokpit / serbest"], ["Sağ tık + sürükle", "etrafa bak"], ["Sağ tık (parça)", "parça penceresi"], ["Tekerlek", "yakınlaş"],
 		["Orta tık", "bakışı sıfırla"], ["Sol tık (kokpit)", "anahtarları kullan"]]],
-	["DÜNYA", [["F5 / F6", "hava durumu / saat"], ["F3", "aerodinamik debug"], ["F1", "tuşlar penceresi"]]],
+	["DÜNYA", [[", / . / /", "zaman ileri sarma (yavaş / hızlı / normal)"], ["F5 / F6", "hava durumu / saat"], ["F3", "aerodinamik debug"], ["F1", "tuşlar penceresi"]]],
 ]
 
 var vessel: Vessel
@@ -57,7 +57,18 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_help"):
 		toggle("help")
 	elif event.is_action_pressed("autopilot_toggle") and player and is_instance_valid(vessel):
-		player.toggle_autopilot()
+		if event is InputEventKey and event.shift_pressed:
+			# Shift+U: arazi takibi (yön de tutulur)
+			var ap := player.autopilot
+			ap.terrain_follow = not ap.terrain_follow
+			if ap.terrain_follow:
+				ap.capture(vessel)
+				ap.level = true
+				ap.hold_heading = true
+				ap.hold_altitude = false
+			vessel.system_message.emit("ARAZİ TAKİBİ %s (yer +%d m)" % ["AÇIK" if ap.terrain_follow else "KAPALI", ap.tf_agl])
+		else:
+			player.toggle_autopilot()
 
 
 func _process(_delta: float) -> void:
@@ -148,6 +159,7 @@ func _build_autopilot() -> Control:
 	box.add_child(_ap_row("hold_altitude", "İrtifa tut", "m", 100.0))
 	box.add_child(_ap_row("hold_heading", "Yön tut", "°", 10.0))
 	box.add_child(_ap_row("hold_speed", "Hız tut", "km/sa", 25.0))
+	box.add_child(_ap_row("terrain_follow", "Arazi takibi (Shift+U)", "m", 25.0))
 	var off := Button.new()
 	off.text = "Hepsini kapat  (U)"
 	off.focus_mode = Control.FOCUS_NONE
@@ -199,6 +211,7 @@ func _ap_adjust(field: String, step: float) -> void:
 		"hold_altitude": ap.target_altitude = maxf(ap.target_altitude + step, 50.0)
 		"hold_heading": ap.target_heading = fposmod(ap.target_heading + step, 360.0)
 		"hold_speed": ap.target_speed = maxf(ap.target_speed + step / 3.6, 40.0)
+		"terrain_follow": ap.tf_agl = clampf(ap.tf_agl + step, 50.0, 500.0)
 
 
 func _update_autopilot() -> void:
@@ -208,6 +221,7 @@ func _update_autopilot() -> void:
 	_ap_values["hold_altitude"][0].text = "%d m" % ap.target_altitude
 	_ap_values["hold_heading"][0].text = "%03d°" % ap.target_heading
 	_ap_values["hold_speed"][0].text = "%d km/sa" % (ap.target_speed * 3.6)
+	_ap_values["terrain_follow"][0].text = "yer +%d m" % ap.tf_agl
 
 
 func _build_env() -> Control:
@@ -236,7 +250,7 @@ func _build_env() -> Control:
 		tgrid.add_child(b)
 	box.add_child(tgrid)
 	var sl := Label.new()
-	sl.text = "Zaman hızı  ( ,  / . )"
+	sl.text = "Gün saati hızı"
 	box.add_child(sl)
 	var sgrid := HBoxContainer.new()
 	for i in Weather.TIME_SCALES.size():

@@ -1,0 +1,27 @@
+{
+	"name": "Leylek Çift Kirişli Keşif",
+	"group": "Destek & Nakliye",
+	"description": "OV-10 tipi: kısa orta gövde, üstte düz kanat, iki kuyruk kirişi; kirişlerin önünde iki pervaneli motor, arkada kirişler arasında yatay kuyruk ve iki dikey kuyruk. Yavaş, kısa pistten kalkar, alçakta keşif ve kurtarma için.",
+	"paint": {"scheme": "deniz", "number": "L-04"},
+	"parts": [
+		{"part": "nose_cone",      "pos": [0, 0, -2.25]},
+		{"part": "cockpit_framed", "pos": [0, 0, 0]},
+		{"part": "tank_short",     "pos": [0, 0, 2.5]},
+		{"part": "tail_cone",      "pos": [0, 0, 4.3]},
+
+		{"part": "wing_custom",    "pos": [3.1, 0.55, 0.956], "rot": [2, 0, 2], "mirror": true,
+			"wing": {"span": 5.5, "root": 2.0, "tip": 1.4, "sweep": 3.0, "thick": 0.11, "crank": 0.0, "crank_sweep": 0.0}},
+		{"part": "elevon",         "pos": [4.9, 0.6, 2.25], "mirror": true},
+		{"part": "tail_boom",      "pos": [2.2, 0.18, 2.8], "mirror": true},
+		{"part": "prop_engine",    "pos": [2.2, 0.18, -0.85], "mirror": true},
+
+		{"part": "stabilator",     "pos": [1.2, 0.48, 6.0], "mirror": true},
+		{"part": "fin_vertical",   "pos": [2.2, 1.63, 5.6], "rot": [0, 0, 90]},
+		{"part": "fin_vertical",   "pos": [-2.2, 1.63, 5.6], "rot": [0, 0, 90]},
+		{"part": "rudder",         "pos": [2.2, 1.48, 6.95], "rot": [0, 0, 90]},
+		{"part": "rudder",         "pos": [-2.2, 1.48, 6.95], "rot": [0, 0, 90]},
+
+		{"part": "gear_nose",      "pos": [0, -0.6, -1.0]},
+		{"part": "gear_main",      "pos": [2.2, -0.3, 2.0], "mirror": true}
+	]
+}

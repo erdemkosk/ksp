@@ -176,7 +176,7 @@ func _info() -> void:
 	var pinfo := Crew.current()
 	var ptxt := ("  ·  %s (Sv %d)" % [pinfo["name"], pinfo["level"]]) if not pinfo.is_empty() else ""
 	var title := "%s  ·  %s%s" % [vessel.craft_name, camera.mode_name(), ptxt]
-	var ts := ("  ·  zaman x%d" % Weather.time_scale()) if Weather.time_scale() > 1.0 else ""
+	var ts := ("  ·  gün x%d" % Weather.time_scale()) if Weather.time_scale() > 1.0 else ""
 	var sub := "%s  ·  yerel saat %s%s" % [Weather.preset_name(), Weather.format_hour(Weather.local_hour(vessel.global_position)), ts]
 	_text(Vector2(18, 32), title, 17, Color.WHITE, _font_bold)
 	_text(Vector2(18, 54), sub, 14, Color(0.78, 0.84, 0.9))
@@ -823,7 +823,7 @@ func _radio_box(s: Vector2) -> void:
 	var h := 34.0
 	for l in lines:
 		h += line_h * (1 + (l[1] as Array).size()) + 4.0
-	var r := Rect2(s.x - w - 18, 14, w, h)
+	var r := Rect2(s.x - w - 18, 76, w, h)
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.02, 0.04, 0.03, 0.82)
 	sb.border_color = Color(0.45, 1.0, 0.65, 0.5 if live else 0.2)

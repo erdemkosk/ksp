@@ -163,81 +163,207 @@ static func _place(node: Node3D, from: Vector3, to: Vector3) -> void:
 
 # ------------------------------------------------------------------ model
 
+## Kask şeridi rengi pilotun adından (her pilotun kaskı biraz farklı).
+const STRIPES := [Color(0.75, 0.1, 0.08), Color(0.12, 0.25, 0.6), Color(0.9, 0.7, 0.1), Color(0.08, 0.08, 0.09), Color(0.9, 0.45, 0.08)]
+const METAL := Color(0.62, 0.63, 0.6)
+const RUBBER := Color(0.13, 0.14, 0.13)
+
+
 func _build() -> void:
 	_torso = Node3D.new()
+	_torso.name = "Torso"
 	add_child(_torso)
-	# kalça ve gövde: döndürme profili (bel ince, göğüs geniş, omuzlar yuvarlak), önden arkaya basık
-	_mesh(_torso, MeshFactory.lathe([Vector2(-0.12, 0.0), Vector2(-0.1, 0.12), Vector2(-0.02, 0.17), Vector2(0.06, 0.165), Vector2(0.12, 0.15)], 18),
-		Vector3(0, 0.04, 0), G_SUIT, "", Vector3(-90, 0, 0), Vector3(1.05, 0.78, 1.0))
-	_mesh(_torso, MeshFactory.lathe([Vector2(0.0, 0.15), Vector2(0.12, 0.155), Vector2(0.28, 0.185), Vector2(0.42, 0.195),
-		Vector2(0.5, 0.17), Vector2(0.56, 0.11), Vector2(0.59, 0.06)], 20), Vector3.ZERO, SUIT, "", Vector3(-90, 0, 0), Vector3(1.12, 0.74, 1.0))
-	# can yeleği / kemer takımı
-	_mesh(_torso, _capsule(0.18, TORSO * 0.62), Vector3(0, TORSO * 0.62, -0.005), VEST, "", Vector3.ZERO, Vector3(1.1, 1, 0.82))
+	# kalça (G-elbisesi) ve gövde: bel ince, göğüs geniş, omuzlar yuvarlak, önden arkaya basık
+	_mesh(_torso, MeshFactory.lathe([Vector2(-0.13, 0.0), Vector2(-0.11, 0.115), Vector2(-0.03, 0.172), Vector2(0.06, 0.168), Vector2(0.13, 0.152)], 22),
+		Vector3(0, 0.04, 0), G_SUIT, "fabric", Vector3(-90, 0, 0), Vector3(1.06, 0.8, 1.0))
+	_mesh(_torso, MeshFactory.lathe([Vector2(0.0, 0.152), Vector2(0.1, 0.156), Vector2(0.22, 0.178), Vector2(0.34, 0.196),
+		Vector2(0.44, 0.198), Vector2(0.5, 0.18), Vector2(0.555, 0.13), Vector2(0.585, 0.07), Vector2(0.595, 0.0)], 24),
+		Vector3.ZERO, SUIT, "fabric", Vector3(-90, 0, 0), Vector3(1.12, 0.74, 1.0))
+	# omuz ve kalça eklemleri: uzuvlarla gövde arasında boşluk kalmasın
 	for sx: float in [-1.0, 1.0]:
-		_mesh(_torso, _box(Vector3(0.045, TORSO * 0.75, 0.012)), Vector3(sx * 0.09, TORSO * 0.55, -0.145), HARNESS, "", Vector3(0, 0, sx * 8))
-		_mesh(_torso, _box(Vector3(0.045, 0.012, 0.3)), Vector3(sx * 0.11, TORSO - 0.03, 0.0), HARNESS)
-		_mesh(_torso, _box(Vector3(0.06, 0.07, 0.03)), Vector3(sx * 0.11, TORSO * 0.42, -0.15), G_SUIT)   # cepler
-	_mesh(_torso, _box(Vector3(0.3, 0.045, 0.3)), Vector3(0, 0.12, 0), HARNESS)                           # bel kemeri
-	_mesh(_torso, _box(Vector3(0.07, 0.05, 0.02)), Vector3(0, 0.12, -0.15), Color(0.6, 0.6, 0.58), "metal") # toka
-	_mesh(_torso, _box(Vector3(0.08, 0.035, 0.01)), Vector3(-0.08, TORSO * 0.78, -0.15), Color(0.15, 0.15, 0.12))  # isim
-	_mesh(_torso, _box(Vector3(0.05, 0.035, 0.01)), Vector3(0.1, TORSO * 0.78, -0.15), Color(0.75, 0.1, 0.1))     # bayrak
+		_mesh(_torso, _sphere(0.068), Vector3(sx * SHOULDER_WIDTH, TORSO - 0.06, 0.0), SUIT, "fabric", Vector3.ZERO, Vector3(1.05, 1.0, 1.0))
+		_mesh(_torso, _sphere(0.088), Vector3(sx * HIP_WIDTH, -0.02, 0.0), G_SUIT, "fabric")
+	# G-elbisesi bel bandı ve hortum bağlantısı (sol bel)
+	_mesh(_torso, MeshFactory.lathe([Vector2(0.06, 0.168), Vector2(0.08, 0.18), Vector2(0.15, 0.18), Vector2(0.17, 0.166)], 22),
+		Vector3.ZERO, G_SUIT.darkened(0.1), "fabric", Vector3(-90, 0, 0), Vector3(1.08, 0.82, 1.0))
+	_mesh(_torso, _cyl(0.018, 0.08), Vector3(-0.19, 0.11, -0.04), RUBBER, "rubber", Vector3(0, 0, 90))
+	# fermuar (yakadan aşağı) ve yaka
+	_mesh(_torso, _box(Vector3(0.012, 0.16, 0.006)), Vector3(0.0, TORSO - 0.07, -0.148), METAL, "metal", Vector3(-12, 0, 0))
+	_mesh(_torso, _cone(0.066, 0.1, 0.075), Vector3(0, TORSO - 0.005, 0.0), SUIT, "fabric")
+	# can yeleği: öne çıkık şişirme torbaları, cepler, telsiz kesesi
+	_mesh(_torso, _capsule(0.175, TORSO * 0.6), Vector3(0, TORSO * 0.6, 0.0), VEST, "fabric", Vector3.ZERO, Vector3(1.12, 1.0, 0.86))
+	for sx: float in [-1.0, 1.0]:
+		_mesh(_torso, _capsule(0.05, 0.2), Vector3(sx * 0.075, TORSO * 0.63, -0.14), VEST.darkened(0.08), "fabric", Vector3(0, 0, sx * 6), Vector3(1.0, 1.0, 0.55))
+		_mesh(_torso, _box(Vector3(0.07, 0.075, 0.035)), Vector3(sx * 0.12, TORSO * 0.4, -0.15), VEST.darkened(0.15), "fabric")
+		_mesh(_torso, _box(Vector3(0.072, 0.02, 0.037)), Vector3(sx * 0.12, TORSO * 0.4 + 0.035, -0.152), VEST.darkened(0.25), "fabric")   # kapak
+	_mesh(_torso, _box(Vector3(0.05, 0.11, 0.04)), Vector3(-0.15, TORSO * 0.62, -0.1), Color(0.15, 0.16, 0.13), "rubber", Vector3(0, 25, 0))  # telsiz
+	_mesh(_torso, _cyl(0.006, 0.07), Vector3(-0.16, TORSO * 0.62 + 0.08, -0.1), Color(0.08, 0.08, 0.08), "rubber")                      # anten
+	# paraşüt kemer takımı: omuz askıları, göğüs kayışı, bacak kayışları, Koch kilitleri
+	for sx: float in [-1.0, 1.0]:
+		_mesh(_torso, _box(Vector3(0.048, TORSO * 0.78, 0.014)), Vector3(sx * 0.095, TORSO * 0.55, -0.16), HARNESS, "", Vector3(0, 0, sx * 7))
+		_mesh(_torso, _box(Vector3(0.048, 0.014, 0.32)), Vector3(sx * 0.115, TORSO - 0.02, 0.0), HARNESS, "", Vector3(sx * 4, 0, 0))
+		_mesh(_torso, _box(Vector3(0.048, TORSO * 0.75, 0.014)), Vector3(sx * 0.095, TORSO * 0.55, 0.155), HARNESS, "", Vector3(0, 0, -sx * 7))
+		_mesh(_torso, _cyl(0.022, 0.016), Vector3(sx * 0.1, TORSO * 0.82, -0.17), METAL, "metal", Vector3(90, 0, 0))   # Koch
+		_mesh(_torso, _box(Vector3(0.05, 0.12, 0.014)), Vector3(sx * 0.11, -0.02, -0.15), HARNESS, "", Vector3(0, 0, -sx * 20))
+	_mesh(_torso, _box(Vector3(0.24, 0.035, 0.014)), Vector3(0, TORSO * 0.52, -0.172), HARNESS)        # göğüs kayışı
+	_mesh(_torso, _box(Vector3(0.04, 0.03, 0.012)), Vector3(0, TORSO * 0.52, -0.18), METAL, "metal")   # kayış tokası
+	_mesh(_torso, _box(Vector3(0.32, 0.045, 0.31)), Vector3(0, 0.12, 0), HARNESS)                         # bel kemeri
+	_mesh(_torso, _box(Vector3(0.07, 0.05, 0.02)), Vector3(0, 0.12, -0.157), METAL, "metal")              # toka
+	# yamalar: isim, bayrak (sol omuz), filo (sağ omuz)
+	_mesh(_torso, _box(Vector3(0.085, 0.032, 0.008)), Vector3(-0.08, TORSO * 0.8, -0.155), Color(0.16, 0.15, 0.12))
+	_mesh(_torso, _box(Vector3(0.008, 0.04, 0.06)), Vector3(-SHOULDER_WIDTH - 0.06, TORSO - 0.12, 0.0), Color(0.78, 0.08, 0.08))
+	_mesh(_torso, _cyl(0.03, 0.008), Vector3(SHOULDER_WIDTH + 0.06, TORSO - 0.12, 0.0), Color(0.95, 0.75, 0.15), "", Vector3(0, 0, 90))
 	# boyun
-	_mesh(_torso, _cyl(0.055, NECK + 0.04), Vector3(0, TORSO + NECK * 0.5, 0), SKIN)
-	_mesh(_torso, _cone(0.07, 0.11, 0.09), Vector3(0, TORSO - 0.01, 0), SUIT)   # tulum yakası
+	_mesh(_torso, _cyl(0.052, NECK + 0.05), Vector3(0, TORSO + NECK * 0.5, 0), SKIN, "skin")
+	_build_head()
+	_build_hose()
 
+	for key in ["L", "R"]:
+		var side := -1.0 if key == "L" else 1.0
+		_segments["thigh" + key] = _limb(THIGH, 0.085, G_SUIT, "thigh", side)
+		_segments["shin" + key] = _limb(SHIN, 0.064, G_SUIT, "shin", side)
+		_segments["upper" + key] = _limb(UPPER_ARM, 0.058, SUIT, "upper", side)
+		_segments["fore" + key] = _limb(FOREARM, 0.05, SUIT, "fore", side)
+		_feet[key] = _build_boot()
+		_hands[key] = _build_hand(side)
+
+
+## Kafa ve kask: cilt, kask kabuğu, kulaklıklar, ense koruması, vizör yuvası ve altın tonlu
+## vizör, pilota özel renk şeridi, oksijen maskesi (yanlarda süngü kilitleri).
+func _build_head() -> void:
 	_head = Node3D.new()
+	_head.name = "Head"
 	_torso.add_child(_head)
-	var head_parts: Array[MeshInstance3D] = []
-	head_parts.append(_mesh(_head, _sphere(0.1), Vector3(0, -0.005, 0.0), SKIN, "", Vector3.ZERO, Vector3(0.9, 1.1, 1.0)))
-	# kask
-	head_parts.append(_mesh(_head, _sphere(0.142), Vector3(0, 0.03, 0.012), HELMET, "gloss", Vector3.ZERO, Vector3(0.95, 0.98, 1.08)))
-	head_parts.append(_mesh(_head, _box(Vector3(0.05, 0.02, 0.2)), Vector3(0, 0.17, 0.0), HELMET.darkened(0.2), "gloss"))
-	# vizör (koyu, yansıtıcı)
-	head_parts.append(_mesh(_head, _sphere(0.145), Vector3(0, 0.035, -0.012), Color(0.04, 0.05, 0.07), "visor", Vector3.ZERO, Vector3(0.9, 0.5, 0.98)))
-	# oksijen maskesi ve hortum
-	head_parts.append(_mesh(_head, _cone(0.028, 0.062, 0.09), Vector3(0, -0.045, -0.105), MASK, "", Vector3(-80, 0, 0)))
-	head_parts.append(_mesh(_head, _box(Vector3(0.16, 0.012, 0.012)), Vector3(0, -0.03, -0.06), HARNESS))
-	for p in head_parts:
+	var stripe: Color = STRIPES[absi(pilot_name.hash()) % STRIPES.size()]
+	var parts: Array[MeshInstance3D] = []
+	parts.append(_mesh(_head, _sphere(0.098), Vector3(0, -0.008, 0.0), SKIN, "skin", Vector3.ZERO, Vector3(0.88, 1.1, 1.0)))
+	# kabuk: arkası ensede aşağı uzar
+	parts.append(_mesh(_head, _sphere(0.14), Vector3(0, 0.032, 0.012), HELMET, "gloss", Vector3.ZERO, Vector3(0.96, 0.98, 1.08)))
+	parts.append(_mesh(_head, _sphere(0.12), Vector3(0, -0.03, 0.05), HELMET.darkened(0.06), "gloss", Vector3.ZERO, Vector3(1.0, 0.9, 0.9)))
+	# kulaklık çanakları
+	for sx: float in [-1.0, 1.0]:
+		parts.append(_mesh(_head, _cyl(0.05, 0.03), Vector3(sx * 0.128, -0.005, 0.01), HELMET.darkened(0.1), "gloss", Vector3(0, 0, 90)))
+		parts.append(_mesh(_head, _cyl(0.012, 0.03), Vector3(sx * 0.115, 0.035, -0.105), METAL, "metal", Vector3(0, 0, 90)))   # vizör pimi
+	# yüz açıklığı çerçevesi (lastik)
+	parts.append(_mesh(_head, MeshFactory.lathe([Vector2(-0.01, 0.095), Vector2(0.012, 0.102)], 24, 1.15), Vector3(0, 0.0, -0.118), RUBBER, "rubber"))
+	# renk şeridi (tepeden enseye) ve vizör yuvası
+	parts.append(_mesh(_head, _sphere(0.1412), Vector3(0, 0.033, 0.012), stripe, "gloss", Vector3.ZERO, Vector3(0.22, 0.985, 1.085)))
+	parts.append(_mesh(_head, _box(Vector3(0.2, 0.03, 0.06)), Vector3(0, 0.125, -0.085), HELMET.darkened(0.15), "gloss", Vector3(-30, 0, 0)))
+	# vizör: kaskın önünü saran altın tonlu yansıtıcı kabuk
+	parts.append(_mesh(_head, _sphere(0.147), Vector3(0, 0.03, -0.018), Color(0.32, 0.24, 0.08), "visor", Vector3.ZERO, Vector3(0.92, 0.52, 0.99)))
+	# oksijen maskesi: gövde, ağız valfi, yanlarda süngü kilitleri, kask askısı
+	parts.append(_mesh(_head, MeshFactory.lathe([Vector2(-0.05, 0.02), Vector2(-0.03, 0.045), Vector2(0.0, 0.062), Vector2(0.035, 0.066)], 18, 1.1),
+		Vector3(0, -0.05, -0.098), MASK, "rubber", Vector3(-12, 0, 0)))
+	parts.append(_mesh(_head, _cyl(0.022, 0.02), Vector3(0, -0.07, -0.152), Color(0.2, 0.21, 0.19), "rubber", Vector3(-80, 0, 0)))
+	for sx: float in [-1.0, 1.0]:
+		parts.append(_mesh(_head, _box(Vector3(0.012, 0.04, 0.05)), Vector3(sx * 0.072, -0.03, -0.085), METAL, "metal", Vector3(0, sx * 25, 0)))
+		parts.append(_mesh(_head, _box(Vector3(0.01, 0.012, 0.09)), Vector3(sx * 0.1, -0.02, -0.04), HARNESS, "", Vector3(0, sx * 20, 0)))
+	for p in parts:
 		p.layers = HEAD_LAYER
-	var hose := _mesh(_torso, _capsule(0.016, 0.28), Vector3(-0.06, TORSO + 0.02, -0.17), Color(0.2, 0.22, 0.18), "", Vector3(-25, 0, 18))
-	hose.layers = HEAD_LAYER
 	_eye = Node3D.new()
 	_eye.name = "Eye"
 	_eye.position = Vector3(0, 0.02, -0.075)
 	_head.add_child(_eye)
 
-	for key in ["L", "R"]:
-		_segments["thigh" + key] = _limb(THIGH, 0.08, G_SUIT, true)
-		_segments["shin" + key] = _limb(SHIN, 0.062, G_SUIT, true)
-		_segments["upper" + key] = _limb(UPPER_ARM, 0.058, SUIT, false)
-		_segments["fore" + key] = _limb(FOREARM, 0.05, SUIT, false)
-		var foot := Node3D.new()
-		add_child(foot)
-		# bot: yuvarlak burun, ayrı topuk ve kalın taban
-		_mesh(foot, MeshFactory.lathe([Vector2(-0.2, 0.0), Vector2(-0.18, 0.04), Vector2(-0.1, 0.055), Vector2(0.05, 0.058), Vector2(0.08, 0.05), Vector2(0.09, 0.0)], 14, 0.85),
-			Vector3(0, -0.02, -0.03), BOOT)
-		_mesh(foot, _box(Vector3(0.11, 0.06, 0.12)), Vector3(0, 0.02, 0.03), BOOT)
-		_mesh(foot, _box(Vector3(0.115, 0.025, 0.29)), Vector3(0, -0.07, -0.06), Color(0.03, 0.03, 0.03))
-		_feet[key] = foot
-		var hand := Node3D.new()
-		add_child(hand)
-		_mesh(hand, _sphere(0.05), Vector3(0, -0.04, 0), GLOVE, "", Vector3.ZERO, Vector3(0.85, 1.25, 0.6))
-		_mesh(hand, _capsule(0.016, 0.07), Vector3(0.035 if key == "R" else -0.035, -0.035, -0.015), GLOVE, "", Vector3(0, 0, 35 if key == "R" else -35))   # başparmak
-		_mesh(hand, _cyl(0.054, 0.05), Vector3(0, 0.0, 0), GLOVE)
-		_hands[key] = hand
+
+## Oksijen hortumu: maskeden göğüsteki bağlantıya kıvrılan halkalı lastik hortum.
+func _build_hose() -> void:
+	var a := Vector3(0.0, TORSO + NECK + HEAD_HEIGHT - 0.085, -0.16)
+	var ctrl := Vector3(-0.07, TORSO + 0.0, -0.24)
+	var b := Vector3(-0.11, TORSO * 0.66, -0.17)
+	var n := 11
+	var prev := a
+	for i in range(1, n + 1):
+		var t := float(i) / n
+		var p := a.lerp(ctrl, t).lerp(ctrl.lerp(b, t), t)
+		var seg := Node3D.new()
+		_torso.add_child(seg)
+		_place(seg, prev, p)
+		var ring := _mesh(seg, _cyl(0.017, prev.distance_to(p) * 0.92), Vector3(0, -prev.distance_to(p) * 0.5, 0), RUBBER, "rubber")
+		ring.layers = HEAD_LAYER
+		prev = p
+	var plug := _mesh(_torso, _cyl(0.024, 0.04), b, METAL, "metal", Vector3(70, 0, 0))
+	plug.layers = HEAD_LAYER
 
 
-func _limb(length: float, radius: float, color: Color, pocket: bool) -> Node3D:
+## Uzuv: uca doğru incelen kas profili (lathe ekseni -Y'ye çevrilir). Türüne göre ayrıntı:
+## uyluk (G-elbisesi şişirme torbası, cep, sağda diz tahtası), baldır (dizlik, alt cep),
+## üst kol (kalem cebi solda), ön kol (eldiven bileği). Uçta eklem küresi (dirsek / diz).
+func _limb(length: float, radius: float, color: Color, kind: String, side: float) -> Node3D:
 	var n := Node3D.new()
+	n.name = kind + ("L" if side < 0 else "R")
 	add_child(n)
-	# uca doğru incelen, iki ucu yuvarlak uzuv (lathe ekseni -Y'ye çevrilir)
 	var r := radius
-	var prof := [Vector2(-r * 0.9, 0.0), Vector2(-r * 0.6, r * 0.75), Vector2(0.0, r), Vector2(length * 0.35, r * 1.02),
-		Vector2(length * 0.8, r * 0.82), Vector2(length, r * 0.72), Vector2(length + r * 0.5, r * 0.5), Vector2(length + r * 0.75, 0.0)]
-	_mesh(n, MeshFactory.lathe(prof, 14), Vector3.ZERO, color, "", Vector3(90, 0, 0))
-	if pocket:
-		_mesh(n, _box(Vector3(radius * 1.6, length * 0.35, 0.03)), Vector3(radius * 0.9, -length * 0.45, 0), color.darkened(0.15))
+	var prof := [Vector2(-r * 0.6, r * 0.55), Vector2(0.0, r), Vector2(length * 0.25, r * 1.06), Vector2(length * 0.5, r * 1.0),
+		Vector2(length * 0.8, r * 0.84), Vector2(length, r * 0.74), Vector2(length + r * 0.3, r * 0.5)]
+	_mesh(n, MeshFactory.lathe(prof, 16), Vector3.ZERO, color, "fabric", Vector3(90, 0, 0))
+	# eklem: bir sonraki uzvun başını örter
+	_mesh(n, _sphere(r * 0.8), Vector3(0, -length, 0), color, "fabric")
+	match kind:
+		"thigh":
+			# G-elbisesi şişirme torbası (öne doğru kabarık) ve yan cep
+			_mesh(n, _capsule(r * 0.75, length * 0.7), Vector3(0, -length * 0.45, -r * 0.35), color.darkened(0.06), "fabric", Vector3.ZERO, Vector3(1.0, 1.0, 0.75))
+			_mesh(n, _box(Vector3(0.03, length * 0.36, r * 1.5)), Vector3(side * r * 1.0, -length * 0.5, 0), color.darkened(0.14), "fabric")
+			_mesh(n, _box(Vector3(0.032, 0.02, r * 1.52)), Vector3(side * r * 1.0, -length * 0.33, 0), color.darkened(0.25), "fabric")
+			if side > 0.0:
+				# diz tahtası: beyaz not tahtası, klips, kayışlar
+				_mesh(n, _box(Vector3(0.11, 0.15, 0.012)), Vector3(0, -length * 0.62, -r * 1.05), Color(0.9, 0.9, 0.86), "", Vector3(8, 0, 0))
+				_mesh(n, _box(Vector3(0.05, 0.015, 0.02)), Vector3(0, -length * 0.62 + 0.07, -r * 1.1), METAL, "metal")
+				for dy in [-0.25, -0.85]:
+					_mesh(n, _sphere(r * 1.03), Vector3(0, -length * absf(dy) - 0.0, 0), HARNESS, "", Vector3.ZERO, Vector3(1.0, 0.12, 1.0))
+		"shin":
+			_mesh(n, _sphere(r * 1.05), Vector3(0, -0.02, -r * 0.35), color.darkened(0.12), "fabric", Vector3.ZERO, Vector3(1.0, 1.2, 0.7))   # dizlik
+			_mesh(n, _box(Vector3(r * 1.3, length * 0.25, 0.03)), Vector3(0, -length * 0.55, -r * 0.9), color.darkened(0.12), "fabric")
+		"upper":
+			if side < 0.0:
+				_mesh(n, _box(Vector3(0.03, 0.09, 0.05)), Vector3(-r * 0.95, -length * 0.45, -r * 0.2), color.darkened(0.15), "fabric")
+				for k in 2:
+					_mesh(n, _cyl(0.005, 0.03), Vector3(-r * 0.95, -length * 0.45 + 0.055, -r * 0.3 + k * 0.016), Color(0.1, 0.1, 0.12) if k == 0 else METAL, "metal")
+		"fore":
+			# eldiven bileği (uca doğru genişleyen manşet)
+			_mesh(n, _cone(r * 1.05, r * 0.82, 0.07), Vector3(0, -length + 0.02, 0), GLOVE, "leather")
 	return n
+
+
+## Eldivenli el: avuç, dört parmak (iki boğumlu, hafif kıvrık), başparmak, manşet.
+func _build_hand(side: float) -> Node3D:
+	var hand := Node3D.new()
+	hand.name = "hand" + ("L" if side < 0 else "R")
+	add_child(hand)
+	_mesh(hand, _box(Vector3(0.082, 0.085, 0.032)), Vector3(0, -0.045, 0), GLOVE, "leather")
+	_mesh(hand, _sphere(0.042), Vector3(0, -0.045, 0.004), GLOVE, "leather", Vector3.ZERO, Vector3(1.0, 1.05, 0.45))
+	for i in 4:
+		var x := lerpf(-0.03, 0.03, i / 3.0)
+		var ln := [0.036, 0.042, 0.04, 0.032][i] as float
+		var f := Node3D.new()
+		f.position = Vector3(x, -0.088, 0)
+		f.rotation_degrees = Vector3(-28, 0, 0)
+		hand.add_child(f)
+		_mesh(f, _capsule(0.0105, ln), Vector3(0, -ln * 0.5, 0), GLOVE, "leather")
+		var tip := Node3D.new()
+		tip.position = Vector3(0, -ln, 0)
+		tip.rotation_degrees = Vector3(-35, 0, 0)
+		f.add_child(tip)
+		_mesh(tip, _capsule(0.0098, ln * 0.75), Vector3(0, -ln * 0.36, 0), GLOVE, "leather")
+	var th := Node3D.new()
+	th.position = Vector3(side * 0.04, -0.035, -0.008)
+	th.rotation_degrees = Vector3(-20, 0, side * 40)
+	hand.add_child(th)
+	_mesh(th, _capsule(0.012, 0.055), Vector3(0, -0.028, 0), GLOVE, "leather")
+	return hand
+
+
+## Uçuş botu: yuvarlak burun, bilek konçu, bağcık şeridi, kalın taban ve topuk.
+func _build_boot() -> Node3D:
+	var foot := Node3D.new()
+	add_child(foot)
+	_mesh(foot, MeshFactory.lathe([Vector2(-0.2, 0.0), Vector2(-0.185, 0.038), Vector2(-0.12, 0.056), Vector2(0.03, 0.06), Vector2(0.075, 0.055), Vector2(0.09, 0.0)], 16, 0.82),
+		Vector3(0, -0.02, -0.03), BOOT, "leather")
+	_mesh(foot, _cone(0.06, 0.065, 0.16), Vector3(0, 0.05, 0.02), BOOT, "leather")           # konç
+	_mesh(foot, _box(Vector3(0.045, 0.14, 0.012)), Vector3(0, 0.03, -0.045), Color(0.14, 0.13, 0.12), "", Vector3(-12, 0, 0))   # bağcık
+	_mesh(foot, _box(Vector3(0.118, 0.028, 0.295)), Vector3(0, -0.072, -0.06), Color(0.035, 0.035, 0.035), "rubber")
+	_mesh(foot, _box(Vector3(0.1, 0.03, 0.07)), Vector3(0, -0.06, 0.05), Color(0.035, 0.035, 0.035), "rubber")
+	return foot
 
 
 func _mesh(parent: Node3D, mesh: Mesh, pos: Vector3, color: Color, kind := "", rot := Vector3.ZERO, scl := Vector3.ONE) -> MeshInstance3D:
@@ -251,26 +377,57 @@ func _mesh(parent: Node3D, mesh: Mesh, pos: Vector3, color: Color, kind := "", r
 	return mi
 
 
-static func _mat(color: Color, kind: String) -> StandardMaterial3D:
+static func _mat(color: Color, kind: String) -> Material:
 	var key := color.to_html() + kind
 	if _mats.has(key):
 		return _mats[key]
+	if kind == "fabric":
+		var sm := ShaderMaterial.new()
+		sm.shader = preload("res://pilot/fabric.gdshader")
+		sm.set_shader_parameter("base", color)
+		_mats[key] = sm
+		return sm
 	var m := StandardMaterial3D.new()
 	m.albedo_color = color
 	m.roughness = 0.75
 	match kind:
 		"gloss":
-			m.roughness = 0.25
+			m.roughness = 0.22
 			m.clearcoat_enabled = true
-			m.clearcoat = 0.6
+			m.clearcoat = 0.7
+			m.clearcoat_roughness = 0.15
 		"visor":
-			m.roughness = 0.05
-			m.metallic = 0.9
+			m.roughness = 0.04
+			m.metallic = 1.0
+			m.metallic_specular = 0.9
 		"metal":
 			m.roughness = 0.3
 			m.metallic = 0.9
+		"rubber":
+			m.roughness = 0.92
+		"leather":
+			m.roughness = 0.55
+			m.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
+		"skin":
+			m.roughness = 0.6
+			m.subsurf_scatter_enabled = true
+			m.subsurf_scatter_strength = 0.35
 	_mats[key] = m
 	return m
+
+
+# ------------------------------------------------------------------ ragdoll desteği
+
+## Ragdoll için gövde parçaları (dünya dönüşümleri o anki pozdan): ad → düğüm.
+## torso (kafa hariç), head, upperL/R, foreL/R, thighL/R, shinL/R, handL/R, footL/R.
+func ragdoll_nodes() -> Dictionary:
+	var out := {"torso": _torso, "head": _head}
+	for key in ["L", "R"]:
+		for seg in ["thigh", "shin", "upper", "fore"]:
+			out[seg + key] = _segments[seg + key]
+		out["hand" + key] = _hands[key]
+		out["foot" + key] = _feet[key]
+	return out
 
 
 static func _capsule(r: float, h: float) -> CapsuleMesh:

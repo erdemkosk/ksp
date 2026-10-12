@@ -12,6 +12,7 @@ uniform float panel_lines = 1.0;
 
 varying vec3 lp;
 varying vec3 wn;
+instance uniform float inner_sign = 0.0;   // yalnız açık kokpit kabuğu: iç yüzü boyanmaz
 
 float hash(vec3 p) {
 	p = fract(p * 0.3183099 + 0.1);
@@ -37,8 +38,10 @@ void vertex() {
 void fragment() {
 	vec3 c = color1;
 	if (scheme == 1) {
-		float n = noise(lp * 0.55) * 0.6 + noise(lp * 1.3) * 0.4;
-		c = n > 0.62 ? color3 : (n > 0.45 ? color2 : color1);
+		// sol-sağ simetrik (gerçek uçaklardaki gibi) ve her parçada leke görünecek sıklıkta
+		vec3 q = vec3(abs(lp.x), lp.y, lp.z) + vec3(0.0, 0.0, 3.7);
+		float n = noise(q * 0.8) * 0.65 + noise(q * 1.9) * 0.35;
+		c = n > 0.6 ? color3 : (n > 0.43 ? color2 : color1);
 	} else if (scheme == 2) {
 		// üst beyaz (color1), alt renk (color2), ortada ince şerit (color3)
 		float up = normalize(wn).y;
@@ -47,7 +50,8 @@ void fragment() {
 			c = color3;
 		}
 	} else if (scheme == 3) {
-		float n = noise(lp * 0.4 + vec3(3.0)) + noise(lp * 1.1) * 0.35;
+		vec3 q = vec3(abs(lp.x), lp.y, lp.z);
+		float n = noise(q * 0.6 + vec3(3.0)) + noise(q * 1.4) * 0.35;
 		c = n > 0.78 ? color2 : color1;
 	}
 	c *= (1.0 - dark * 0.22);
@@ -82,8 +86,18 @@ void fragment() {
 	float streak = noise(vec3(lp.x * 9.0, lp.y * 9.0, lp.z * 0.35)) * smoothstep(-0.2, -0.8, normalize(wn).y);
 	c *= 1.0 - grime * 0.12 - streak * 0.08;
 	ALBEDO = c * (1.0 - lines * 0.35 - hatch * 0.3) + vec3(rivet * 0.03);
-	METALLIC = 0.3 + rivet * 0.4;
-	ROUGHNESS = 0.45 + lines * 0.2 + grime * 0.15 - rivet * 0.2;
-	CLEARCOAT = 0.3 * (1.0 - grime);
+	// normal: ağ sarımına güvenme (ters sarımlı gövde tüplerinde Godot normali içe çeviriyordu →
+	// gövde koyu mavi görünüyordu). Gerçek dış normali al; arkadan bakılıyorsa (iç yüz) çevir.
+	vec3 nv = normalize((VIEW_MATRIX * vec4(wn, 0.0)).xyz);
+	bool inside = dot(nv, VIEW) < 0.0;
+	NORMAL = inside ? -nv : nv;
+	// açık kokpit kabuğunun iç yüzü (kokpitten görünür): boya değil koyu iç astar
+	if (inner_sign > 0.0 && inside) {
+		ALBEDO = vec3(0.13, 0.135, 0.14);
+	}
+	// boya metal değil: düşük metallik, ince vernik (aksi halde gökyüzünü ayna gibi yansıtıp deseni siliyordu)
+	METALLIC = 0.06 + rivet * 0.5;
+	ROUGHNESS = 0.58 + lines * 0.15 + grime * 0.15 - rivet * 0.25;
+	CLEARCOAT = 0.12 * (1.0 - grime);
 	CLEARCOAT_ROUGHNESS = 0.3;
 }

@@ -55,6 +55,9 @@ func on_attached() -> void:
 	if rmax > 0.0:
 		front_round = has_engine or front_r < rmax * 0.55
 		rear_tapered = has_engine or rear_r < rmax * 0.6
+	# ikiz motor adaptörü: arka yüz motor yuvaları (egzozla dolu)
+	if part.def.has("rear_nodes"):
+		rear_tapered = true
 	else:
 		front_round = true
 		rear_tapered = true

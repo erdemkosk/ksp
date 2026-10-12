@@ -32,5 +32,10 @@ func _physics_process(delta: float) -> void:
 	if fmod(_t, float(Game.args.get("every", "0.5"))) < delta:
 		print("t=%.1f v=%d G=%.1f strain=%.2f auth=%.2f blk=%s" % [_t, main.vessel.airspeed() * 3.6, main.vessel.g_force, p.g_strain, p._auth, p.blackout])
 	if _t > 10.0:
+		var dmg := PackedStringArray()
+		for part in main.vessel.parts:
+			if part.hp < part.max_hp * 0.999:
+				dmg.append("%s %d%%" % [part.title, part.health_ratio() * 100.0])
+		print("PULLTEST hasarlı=%s parça=%d" % [dmg, main.vessel.parts.size()])
 		print("PULLTEST maxG=%.1f tol=%.1f bayildi=%s" % [_max_g, p.g_tolerance(), _fainted])
 		get_tree().quit()

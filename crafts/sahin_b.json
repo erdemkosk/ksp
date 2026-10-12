@@ -1,6 +1,7 @@
 {
 	"name": "Şahin-B",
-	"description": "Delta kanatlı ağır avcı-bombardıman. J-120 motor, dört 250 kg bomba, iki IR füze, top, flare.",
+	"group": "Saldırı",
+	"description": "Delta kanatlı ağır avcı-bombardıman. J-120 motor, dört 250 kg bomba, iki RF-1 radar füzesi, top, flare.",
 	"paint": {"scheme": "kamuflaj", "number": "71"},
 	"parts": [
 		{"part": "radar_nose",      "pos": [0, 0, -9.65]},
@@ -17,7 +18,7 @@
 		{"part": "elevon",          "pos": [2.2, -0.2, 3.1], "mirror": true},
 		{"part": "bomb_rail",       "pos": [1.7, -0.66, -0.2], "mirror": true},
 		{"part": "bomb_rail",       "pos": [3.1, -0.66, 0.6], "mirror": true},
-		{"part": "missile_rail",    "pos": [4.3, -0.5, 1.4], "mirror": true},
+		{"part": "radar_missile_rail", "pos": [4.3, -0.52, 1.4], "mirror": true},
 
 		{"part": "wing_small",      "pos": [0, 1.6, 3.6], "rot": [0, 0, 90]},
 		{"part": "rudder",          "pos": [0, 1.6, 4.85], "rot": [0, 0, 90]},

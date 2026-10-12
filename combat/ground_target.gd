@@ -1,8 +1,19 @@
 class_name GroundTarget
 extends StaticBody3D
 ## Basit yer hedefi (zırhlı araç). Canı biter: patlar, yanık kabuğa döner, duman tüter.
+## Alarm: vurulan, yakınına bomba/füze düşen ya da üstünden alçak geçilen birim aynı takımdan
+## ALERT_RADIUS içindeki birimleri uyarır; her birim kendi tepkisini verir (_on_alert).
 
 const LAYER := 8
+const ALERT_RADIUS := 1500.0
+const THREAT_RADIUS := 900.0        ## bu kadar yakındaki alçak uçak / bomba / füze alarm verir
+const LOW_PASS_AGL := 500.0
+
+## Alarm süresi (s); son tehditten bu kadar sonra sakinleşirler (testler kısaltabilir).
+static var alert_time := 45.0
+## Paylaşılan tehdit listesi [konum, takım] (birkaç karede bir, tek tarama)
+static var _threats: Array = []
+static var _threat_frame := -100
 
 var hp := 600.0
 var destroyed := false
@@ -13,6 +24,11 @@ var unit_name := "Zırhlı araç"
 var team := "düşman"
 var _hull: Node3D
 var _turret: Node3D
+## Kalan alarm süresi (s); > 0 iken birim tetikte
+var alert_t := 0.0
+var _threat_rel := Vector3.ZERO     ## son tehdidin bize göre konumu (kayan orijinden etkilenmez)
+var _scan_t := randf() * 0.5
+var _alarm_frame := -100
 
 
 static func create(pos: Vector3, yaw: float) -> GroundTarget:
@@ -62,6 +78,11 @@ func take_damage(amount: float) -> void:
 	if destroyed:
 		return
 	hp -= amount
+	_on_hit(amount)
+	# ateş altındayız: komşuları uyar (mermi yağmurunda her isabette değil)
+	if Engine.get_physics_frames() - _alarm_frame > 20:
+		_alarm_frame = Engine.get_physics_frames()
+		raise_alarm(_guess_threat(), true)
 	if hp <= 0.0:
 		destroyed = true
 		var up := Planet.up_at(global_position)
@@ -80,6 +101,89 @@ func take_damage(amount: float) -> void:
 ## Alt sınıflar için: yok olunca ek davranış (helikopter düşer, kamyon durur…).
 func _on_destroyed() -> void:
 	pass
+
+
+## Alt sınıflar için: isabet aldı (uçaksavar susar, helikopter kaçar…).
+func _on_hit(_amount: float) -> void:
+	pass
+
+
+## Alt sınıflar için: alarm geldi. `first`: sakinken ilk alarm; `hit`: biri vuruldu.
+func _on_alert(_first: bool, _hit: bool) -> void:
+	pass
+
+
+func alerted() -> bool:
+	return alert_t > 0.0 and not destroyed
+
+
+## Son bilinen tehdit konumu (alarm yoksa null).
+func threat_point() -> Variant:
+	return global_position + _threat_rel if alerted() else null
+
+
+## Bu birime alarm ver.
+func alarm(threat: Vector3, hit := false) -> void:
+	if destroyed:
+		return
+	var first := alert_t <= 0.0
+	alert_t = alert_time
+	_threat_rel = threat - global_position
+	_on_alert(first, hit)
+
+
+## Yarıçap içindeki aynı takımdan tüm birimleri (kendisi dahil) uyar.
+func raise_alarm(threat: Vector3, hit := false, radius := ALERT_RADIUS) -> void:
+	var p := get_parent()
+	if p == null:
+		return
+	for n in p.get_children():
+		if n is GroundTarget and n.team == team and not n.destroyed and n.global_position.distance_to(global_position) < radius:
+			n.alarm(threat, hit)
+
+
+## Ateş edeni bilmiyoruz: en yakın düşman uçağı, yoksa tepemiz.
+func _guess_threat() -> Vector3:
+	var v: Vessel = nearest_enemy_vessel(6000.0) if get_parent() else null
+	return v.com_global() if v else global_position + Planet.up_at(global_position) * 300.0
+
+
+## Alt sınıfların _physics_process'i çağırır: alarm süresi + yakın tehdit taraması (2 Hz).
+func _alert_tick(delta: float) -> void:
+	alert_t = maxf(alert_t - delta, 0.0)
+	_scan_t -= delta
+	if _scan_t > 0.0:
+		return
+	_scan_t = 0.5
+	_refresh_threats(get_parent())
+	for th: Array in _threats:
+		if th[1] != team and (th[0] as Vector3).distance_to(global_position) < THREAT_RADIUS:
+			raise_alarm(th[0])
+			return
+
+
+## Alçak uçan uçaklar, düşen bombalar, uçan füzeler (15 karede bir; tüm birimler paylaşır).
+static func _refresh_threats(world: Node) -> void:
+	var f := Engine.get_physics_frames()
+	if f - _threat_frame < 15 or world == null:
+		return
+	_threat_frame = f
+	_threats.clear()
+	for n in world.get_children():
+		if n is Vessel:
+			if not n.parts.is_empty() and n.has_pilot() and n.radar_altitude() < LOW_PASS_AGL:
+				_threats.append([n.com_global(), n.team])
+		elif n is Bomb:
+			_threats.append([n.global_position, n.shooter.team if is_instance_valid(n.shooter) else ""])
+	for m in Missile.active:
+		if is_instance_valid(m) and is_instance_valid(m.shooter):
+			_threats.append([m.global_position, m.shooter.team])
+
+
+## Dünya konumunun yüzey koordinatı (başlangıç çerçevesi: x doğu, y güney).
+static func surface_xz(p: Vector3) -> Vector2:
+	var d := (p - Planet.center()).normalized()
+	return Vector2(d.x, d.z) / maxf(d.y, 0.01) * Planet.RADIUS
 
 
 ## Tüm görselleri yanık kabuk rengine çevir.

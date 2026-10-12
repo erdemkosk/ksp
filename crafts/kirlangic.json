@@ -1,5 +1,6 @@
 {
 	"name": "Kırlangıç",
+	"group": "Sivil",
 	"description": "Pervaneli hafif yolcu uçağı: 6 koltuklu kabin, düz kanat, fren paraşütü. Kurtarma ve yolcu görevleri için.",
 	"paint": {"scheme": "sivil", "number": "TC-KRL"},
 	"parts": [

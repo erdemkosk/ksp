@@ -17,7 +17,7 @@ var _xp_acc := 0.0
 ## G sınırlayıcı (fly-by-wire): kumanda, pilotun dayanabileceği G'yi aşacak kadar çekilemez.
 ## Ölçülen G sınıra yaklaşınca yunuslama komutu kısılır; ayarlardan kapatılabilir.
 var g_limiter := true
-var _g_per_q := 2.6e-4      ## öğrenilen: (G-1) / (kumanda × dinamik basınç)
+var _g_per_q := 6.0e-4      ## öğrenilen: (G-1) / (kumanda × dinamik basınç); güvenli taraftan başlar
 var _auth := 1.0
 var _auth_neg := 1.0
 var _prev_wx := 0.0
@@ -157,6 +157,11 @@ func _physics_process(delta: float) -> void:
 		Sfx.click()
 	if Input.is_action_pressed("flare"):
 		vessel.drop_flares()
+	if Input.is_action_pressed("chaff"):
+		vessel.drop_chaff()
+	if Input.is_action_just_pressed("cm_auto"):
+		vessel.cm_auto = not vessel.cm_auto
+		vessel.system_message.emit("KARŞI TEDBİR PROGRAMI %s" % ("OTOMATİK" if vessel.cm_auto else "ELLE"))
 	vessel.autopilot_active = autopilot.any_active()
 
 
@@ -287,7 +292,7 @@ func _limit_g(pitch: float, delta: float) -> float:
 	var eff := vessel.ctrl_pitch
 	if absf(eff) > 0.25 and q > 3000.0:
 		var sample := clampf((g - 1.0) / (eff * q), _g_per_q * 0.5, _g_per_q * 2.0)
-		_g_per_q = clampf(_g_per_q + (sample - _g_per_q) * minf(delta / 1.5, 1.0), 2e-5, 2e-3)
+		_g_per_q = clampf(_g_per_q + (sample - _g_per_q) * minf(delta / 0.6, 1.0), 2e-5, 3e-3)
 	var want := clampf((gmax - 1.0) / (_g_per_q * q), 0.08, 1.0)
 	var want_neg := clampf((1.0 - gmin) / (_g_per_q * q), 0.08, 1.0)
 	# sınır aşılıyorsa yetki daha da kısılır (yumuşak)
@@ -295,9 +300,9 @@ func _limit_g(pitch: float, delta: float) -> float:
 		want *= clampf(1.0 - (g - gmax) * 0.25, 0.3, 1.0)
 	if g < gmin:
 		want_neg *= clampf(1.0 - (gmin - g) * 0.3, 0.3, 1.0)
-	var k := 1.0 - exp(-delta / 0.25)
-	_auth = lerpf(_auth, want, k)
-	_auth_neg = lerpf(_auth_neg, want_neg, k)
+	# kısarken hızlı, açarken yavaş (aşırı G kaçmasın, kumanda yine akıcı)
+	_auth = lerpf(_auth, want, 1.0 - exp(-delta / (0.07 if want < _auth else 0.35)))
+	_auth_neg = lerpf(_auth_neg, want_neg, 1.0 - exp(-delta / (0.07 if want_neg < _auth_neg else 0.35)))
 	return pitch * (_auth if pitch > 0.0 else _auth_neg)
 
 

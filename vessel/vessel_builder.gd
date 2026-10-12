@@ -5,6 +5,7 @@ const MODULE_SCRIPTS := {
 	"wing": preload("res://vessel/modules/wing_module.gd"),
 	"control_surface": preload("res://vessel/modules/control_surface_module.gd"),
 	"engine": preload("res://vessel/modules/engine_module.gd"),
+	"booster": preload("res://vessel/modules/booster_module.gd"),
 	"fuel_tank": preload("res://vessel/modules/fuel_tank_module.gd"),
 	"cockpit": preload("res://vessel/modules/cockpit_module.gd"),
 	"body_drag": preload("res://vessel/modules/body_drag_module.gd"),
@@ -20,6 +21,10 @@ const MODULE_SCRIPTS := {
 	"passenger": preload("res://vessel/modules/passenger_module.gd"),
 	"cargo": preload("res://vessel/modules/cargo_module.gd"),
 	"targeting_pod": preload("res://vessel/modules/targeting_pod_module.gd"),
+	"ecm": preload("res://vessel/modules/ecm_module.gd"),
+	"irst": preload("res://vessel/modules/irst_module.gd"),
+	"refuel_probe": preload("res://vessel/modules/refuel_probe_module.gd"),
+	"splitter": preload("res://vessel/modules/splitter_module.gd"),
 }
 
 const PAINT := Color(0.56, 0.61, 0.66)
@@ -60,6 +65,8 @@ static func normalize(craft: Dictionary) -> Dictionary:
 	for e: Dictionary in craft.get("parts", []):
 		var p: Array = e.get("pos", [0, 0, 0])
 		e["pos"] = [float(p[0]) * k, float(p[1]) * k, float(p[2]) * k]
+		if e.has("axis"):
+			e["axis"] = [float(e["axis"][0]) * k, float(e["axis"][1]) * k]
 	craft["units"] = s
 	return craft
 
@@ -71,20 +78,76 @@ static func build(craft: Dictionary) -> Vessel:
 	vessel.craft_name = craft.get("name", "İsimsiz")
 	vessel.name = "Vessel"
 	for entry: Dictionary in craft.get("parts", []):
-		var pos := _vec(entry.get("pos", [0, 0, 0]))
-		var rot := _vec(entry.get("rot", [0, 0, 0]))
 		var sc: float = entry.get("scale", 1.0)
-		_add_part(vessel, entry["part"], pos, rot, false, sc)
-		if entry.get("mirror", false):
-			# YZ düzlemine göre ayna: x ters, y/z dönüşleri ters
-			_add_part(vessel, entry["part"], Vector3(-pos.x, pos.y, pos.z), Vector3(rot.x, -rot.y, -rot.z), true, sc)
+		for c in entry_copies(entry):
+			_add_part(vessel, entry["part"], c["pos"], c["rot"], c["flip"], sc, entry)
 	_add_fillets(vessel)
+	_add_pylons(vessel)
 	_add_decals(vessel)
 	return vessel
 
 
+static var MIRROR := Transform3D(Basis.from_scale(Vector3(-1, 1, 1)), Vector3.ZERO)
+
+
+## Kaydın simetri kopyalarının dönüşümleri: [{xf, mirror}] — ilki her zaman kaydın kendisi (birim).
+## Ayna: X' = M·X·M (YZ düzlemine göre; geometri ters çevrilmez, "flip" görseli ters çevirir).
+## Radyal n: X' = S_k·X, S_k = eksen (axis: [x, y], Z yönünde) çevresinde 360°·k/n dönüş.
+static func copy_ops(entry: Dictionary) -> Array[Dictionary]:
+	var ops: Array[Dictionary] = [{"xf": Transform3D.IDENTITY, "mirror": false}]
+	if entry.get("mirror", false):
+		ops.append({"xf": MIRROR, "mirror": true})
+	elif int(entry.get("radial", 1)) > 1:
+		var n := int(entry["radial"])
+		var ax: Array = entry.get("axis", [0, 0])
+		var c := Vector3(float(ax[0]), float(ax[1]), 0.0)
+		for k in range(1, n):
+			var r := Transform3D(Basis(Vector3.BACK, TAU * k / n), Vector3.ZERO)
+			ops.append({"xf": Transform3D(Basis.IDENTITY, c) * r * Transform3D(Basis.IDENTITY, -c), "mirror": false})
+	return ops
+
+
+static func apply_op(op: Dictionary, x: Transform3D) -> Transform3D:
+	var s: Transform3D = op["xf"]
+	return s * x * s if op["mirror"] else s * x
+
+
+## Kaydın kendi dönüşümü (ölçeksiz).
+static func entry_xform(entry: Dictionary) -> Transform3D:
+	return Transform3D(Basis.from_euler(_vec(entry.get("rot", [0, 0, 0])) * (PI / 180.0)), _vec(entry.get("pos", [0, 0, 0])))
+
+
+## Kayda dönüşüm yaz (konum 1 mm'ye, açı 0.01°'ye yuvarlanır; sıfır dönüş yazılmaz).
+static func set_entry_xform(entry: Dictionary, x: Transform3D) -> void:
+	var p := x.origin.snapped(Vector3.ONE * 0.001)
+	entry["pos"] = [p.x, p.y, p.z]
+	var r := (x.basis.orthonormalized().get_euler() * (180.0 / PI)).snapped(Vector3.ONE * 0.01)
+	if r.is_zero_approx():
+		entry.erase("rot")
+	else:
+		entry["rot"] = [r.x, r.y, r.z]
+
+
+## Kaydın uçakta oluşturduğu tüm parçalar: [{pos, rot (derece), flip}].
+static func entry_copies(entry: Dictionary) -> Array[Dictionary]:
+	var pos := _vec(entry.get("pos", [0, 0, 0]))
+	var rot := _vec(entry.get("rot", [0, 0, 0]))
+	var flip: bool = entry.get("flip", false)
+	var out: Array[Dictionary] = [{"pos": pos, "rot": rot, "flip": flip}]
+	if entry.get("mirror", false):
+		# YZ düzlemine göre ayna: x ters, y/z dönüşleri ters (M·X·M ile aynı, Euler açısı korunur)
+		out.append({"pos": Vector3(-pos.x, pos.y, pos.z), "rot": Vector3(rot.x, -rot.y, -rot.z), "flip": not flip})
+		return out
+	var ops := copy_ops(entry)
+	var base := entry_xform(entry)
+	for i in range(1, ops.size()):
+		var x := apply_op(ops[i], base)
+		out.append({"pos": x.origin, "rot": x.basis.orthonormalized().get_euler() * (180.0 / PI), "flip": flip})
+	return out
+
+
 ## Hangarda büyütülüp küçültülebilen kategoriler.
-const SCALABLE := ["gövde", "motor", "kanat", "kontrol", "sensör"]
+const SCALABLE := ["gövde", "motor", "kanat", "kontrol", "sensör", "kokpit", "iniş takımı"]
 
 
 ## Ölçek s: boyutlar s, alanlar/itki s², hacim (yakıt, tank kütlesi) s³ ile değişir.
@@ -116,13 +179,72 @@ static func scaled_def(def: Dictionary, s: float) -> Dictionary:
 		for key in ["capacity", "fuel"]:
 			if m.has(key):
 				m[key] = float(m[key]) * s3
+		# iniş takımı: boy ve teker ölçekle, yay/sönüm taşıdığı kütleyle (hacim) büyür
+		for key in ["rest_length", "wheel_radius"]:
+			if m.has(key):
+				m[key] = float(m[key]) * s
+		for key in ["spring", "damper"]:
+			if m.has(key):
+				m[key] = float(m[key]) * s3
 	d["visual_pivot"] = (def.get("visual_pivot", Vector3.ZERO) as Vector3) * s
 	d["_scale"] = float(def.get("_scale", 1.0)) * s
 	return d
 
 
-static func _add_part(vessel: Vessel, id: String, pos: Vector3, rot_deg: Vector3, mirrored: bool, sc := 1.0) -> void:
-	var def := scaled_def(PartLibrary.get_def(id), sc)
+## Gövdesi uzunluk / genişlik / yükseklik ayrı ayrı ayarlanabilen kategoriler (kayıtta "stretch").
+const STRETCHABLE := ["gövde", "motor", "sensör"]
+
+
+## Kaydın parça tanımı: ayarlanabilir kanat kendi biçiminden kurulur, ardından ölçek ve esneme.
+static func entry_def(id: String, entry: Dictionary, sc := 1.0) -> Dictionary:
+	var base := PartLibrary.get_def(id)
+	if base.get("procedural", "") == "wing" and entry.has("wing"):
+		base = PartLibrary.custom_wing_def(entry["wing"])
+	var def := scaled_def(base, sc)
+	if entry.has("stretch") and def.get("category", "") in STRETCHABLE:
+		def = stretched_def(def, _vec(entry["stretch"]))
+	return def
+
+
+## Eksen başına esneme st = (genişlik, yükseklik, uzunluk) çarpanı. Kütle ve yakıt hacimle,
+## ön alan ve itki kesit alanıyla (x·y), yan alan y·z ile değişir. Görsel düğüm de aynı oranla.
+static func stretched_def(def: Dictionary, st: Vector3) -> Dictionary:
+	st = st.clamp(Vector3.ONE * 0.4, Vector3.ONE * 3.0)
+	if st.is_equal_approx(Vector3.ONE):
+		return def
+	var d := def.duplicate(true)
+	var vol := st.x * st.y * st.z
+	var sec := st.x * st.y
+	d["mass"] = float(def.get("mass", 100.0)) * vol
+	d["hp"] = float(def.get("hp", 100.0)) * sqrt(vol)
+	d["cost"] = int(float(def.get("cost", 0)) * sqrt(vol))
+	d["size"] = (def.get("size", Vector3.ONE) as Vector3) * st
+	for c: Dictionary in d.get("colliders", []):
+		c["pos"] = (c.get("pos", Vector3.ZERO) as Vector3) * st
+		if c.has("r"):
+			c["r"] = float(c["r"]) * (st.x + st.y) * 0.5
+		if c.has("len"):
+			c["len"] = float(c["len"]) * st.z
+		if c.has("size"):
+			c["size"] = (c["size"] as Vector3) * st
+	for m: Dictionary in d.get("modules", []):
+		for key in ["front_area", "max_thrust", "fuel_rate"]:
+			if m.has(key):
+				m[key] = float(m[key]) * sec
+		if m.has("side_area"):
+			m["side_area"] = float(m["side_area"]) * st.y * st.z
+		if m.has("area"):
+			m["area"] = float(m["area"]) * st.x * st.z
+		for key in ["capacity", "fuel"]:
+			if m.has(key):
+				m[key] = float(m[key]) * vol
+	d["visual_pivot"] = (def.get("visual_pivot", Vector3.ZERO) as Vector3) * st
+	d["_stretch"] = st
+	return d
+
+
+static func _add_part(vessel: Vessel, id: String, pos: Vector3, rot_deg: Vector3, mirrored: bool, sc := 1.0, entry := {}) -> void:
+	var def := entry_def(id, entry, sc)
 	if def.is_empty():
 		push_error("Bilinmeyen parça: %s" % id)
 		return
@@ -141,15 +263,17 @@ static func _add_part(vessel: Vessel, id: String, pos: Vector3, rot_deg: Vector3
 	var visual := Node3D.new()
 	visual.name = "Visual"
 	visual.position = def.get("visual_pivot", Vector3.ZERO)
-	visual.scale = Vector3.ONE * float(def.get("_scale", 1.0))
+	visual.scale = (def.get("_stretch", Vector3.ONE) as Vector3) * float(def.get("_scale", 1.0))
 	if mirrored and def.get("mirror_visual", false):
 		visual.scale.x = -visual.scale.x
 	var visuals: Array = def.get("visuals", [])
+	# ayarlanabilir kanat: ağ önbelleği biçime göre ayrı
+	var shape_key := ("#%d" % str(entry.get("wing")).hash()) if def.get("procedural", "") == "wing" else ""
 	# "noscale": insan boyundaki görseller (kokpit içi) dünya ölçeğiyle büyümez
 	var fixed: Node3D = null
 	for i in visuals.size():
 		var v: Dictionary = visuals[i]
-		var mi := _make_mesh(v, "%s:%d" % [id, i])
+		var mi := _make_mesh(v, "%s:%d%s" % [id, i, shape_key])
 		var parent: Node3D = visual.find_child(String(v["parent"]), true, false) as Node3D if v.has("parent") else visual
 		if v.get("noscale", false) and not v.has("parent"):
 			if fixed == null:
@@ -168,12 +292,22 @@ static func _add_part(vessel: Vessel, id: String, pos: Vector3, rot_deg: Vector3
 		var module: PartModule = script.new()
 		module.name = m["type"]
 		module.setup(m)
+		# aynalı kopyada kanadın aerodinamik merkezi de aynalanır (kök iç tarafta kalsın)
+		if mirrored and module is WingModule:
+			module.ac_offset.x = -module.ac_offset.x
 		part.add_module(module)
+	apply_tweaks(part, entry)
 
 	# dayanım: tanımda kN verilmemişse dolu kütlesinin 14 katı (14 G)
 	part.strength = float(def.get("strength_kn", 0.0)) * 1000.0
 	if part.strength <= 0.0:
 		part.strength = part.get_mass() * 9.81 * 14.0
+	# kaldırma yüzeyleri hafif ama geniş: yükü alanla orantılı taşırlar (m² başına 60 kN ≈ uçak
+	# ağırlığının ~12 katı). Yoksa sert manevrada elevon / kanat kendiliğinden hasar alıyordu.
+	for m: Dictionary in def.get("modules", []):
+		if m.get("type", "") in ["wing", "control_surface"]:
+			var per_m2 := 90000.0 if m["type"] == "control_surface" else 60000.0
+			part.strength = maxf(part.strength, float(m.get("area", 1.0)) * per_m2)
 	vessel.add_child(part)
 	vessel.parts.append(part)
 
@@ -183,6 +317,22 @@ static func _add_part(vessel: Vessel, id: String, pos: Vector3, rot_deg: Vector3
 		shape.transform = part.transform * shape.transform
 		vessel.add_child(shape)
 		part.colliders.append(shape)
+
+
+## Hangarda parça penceresinden ayarlananlar (kayıtta tutulur): yakıt doluluğu, kontrol yüzeyi
+## eksenleri ve sapma açısı, afterburner kilidi.
+static func apply_tweaks(part: Part, entry: Dictionary) -> void:
+	for m in part.modules:
+		if m is FuelTankModule and entry.has("fuel"):
+			m.fuel = m.capacity * clampf(float(entry["fuel"]), 0.0, 1.0)
+		elif m is ControlSurfaceModule:
+			if entry.has("axes"):
+				var a: Array = entry["axes"]
+				m.axis_mask = Vector3(float(a[0]), float(a[1]), float(a[2]))
+			if entry.has("deflect"):
+				m.max_deflection = deg_to_rad(float(entry["deflect"]))
+		elif m is EngineModule and entry.get("no_ab", false):
+			m.no_ab = true
 
 
 static func _make_mesh(v: Dictionary, cache_key: String) -> MeshInstance3D:
@@ -199,6 +349,10 @@ static func _make_mesh(v: Dictionary, cache_key: String) -> MeshInstance3D:
 		"wing":
 			if not _mesh_cache.has(cache_key):
 				_mesh_cache[cache_key] = MeshFactory.wing(v["span"], v["root"], v["tip"], v["sweep"], v["thick"])
+			mi.mesh = _mesh_cache[cache_key]
+		"wing_sections":
+			if not _mesh_cache.has(cache_key):
+				_mesh_cache[cache_key] = MeshFactory.wing_sections(v["secs"], v["thick"])
 			mi.mesh = _mesh_cache[cache_key]
 		"cyl":
 			var mesh := CylinderMesh.new()
@@ -228,6 +382,8 @@ static func _make_mesh(v: Dictionary, cache_key: String) -> MeshInstance3D:
 	mi.position = v.get("pos", Vector3.ZERO)
 	var mat_name: String = v.get("mat", "paint")
 	mi.material_override = material(mat_name, v.get("color", Color(0, 0, 0, 0)))
+	if v.has("inner") and mi.material_override is ShaderMaterial:
+		mi.set_instance_shader_parameter("inner_sign", float(v["inner"]))
 	if mat_name in ["flame", "flame_core", "heat_haze", "glow", "glass", "hud_glass", "screen"]:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return mi
@@ -491,7 +647,7 @@ static func _add_fillets(v: Vessel) -> void:
 			continue
 		var chord := p.size.z
 		var thick := maxf(p.size.y, 0.12)
-		var reach := clampf(chord * 0.3, 0.4, 1.4)       # kanat üstüne yayılma
+		var reach := clampf(chord * 0.16, 0.3, 0.75)      # kanat üstüne yayılma
 		var prof := [Vector2(-chord * 0.62, 0.0), Vector2(-chord * 0.5, 0.45), Vector2(-chord * 0.25, 0.85),
 			Vector2(0.0, 1.0), Vector2(chord * 0.3, 0.8), Vector2(chord * 0.55, 0.3), Vector2(chord * 0.64, 0.0)]
 		var mi := MeshInstance3D.new()
@@ -514,7 +670,7 @@ static func _add_fillets(v: Vessel) -> void:
 		var local_root := Vector3(root_sign * (half - t_surf), 0.0, 0.0)
 		# parça uzayında; x: açıklık yönü, y: kalınlık. Yarısı gövdeye gömülü
 		mi.position = local_root - Vector3(root_sign * reach * 0.15, 0.0, chord * 0.04)
-		mi.scale = Vector3(reach, thick * 2.2, 1.0)
+		mi.scale = Vector3(reach, minf(thick * 1.7, 0.45), 1.0)
 		p.add_child(mi)
 
 
@@ -527,3 +683,140 @@ static func cockpit_panel_material() -> ShaderMaterial:
 		_cockpit_panel = ShaderMaterial.new()
 		_cockpit_panel.shader = preload("res://vessel/cockpit_panel.gdshader")
 	return _cockpit_panel
+
+
+# ------------------------------------------------------------------ motor / pod pilonları
+
+## Kanadın (ya da gövdenin) altına boşlukla takılan motor ve podları yukarıdaki yüzeye bağlayan
+## aerodinamik pilon: önü yuvarlak, arkası sivri, ince bir dikey kanatçık. Kurulumda otomatik.
+static func _add_pylons(v: Vessel) -> void:
+	# Asılı parçalar (motor gondolu, pod, ray, harici yük) ve ana takımlar havada durmasın: bağlantı
+	# noktasından yukarı ışın atıp üstteki gerçek yüzeye (kanat altı / gövde) olan boşluğu ölçer,
+	# arayı pilon ya da takım dikmesi uzantısıyla doldurur. Oyuncunun kendi tasarımlarında da çalışır.
+	var faces := {}
+	for p in v.parts:
+		faces[p] = _part_faces(p)
+	for p in v.parts:
+		var gear := false
+		var hang: bool = p.def.get("category", "") == "harici"
+		for m in p.modules:
+			if m is LandingGearModule:
+				gear = true
+			elif m is EngineModule or m is TargetingPodModule or m is BombModule or m is MissileModule or m is GunModule:
+				hang = true
+		if not gear and not hang:
+			continue
+		var own: Array = faces[p]
+		if own.is_empty():
+			continue
+		var box := _faces_aabb(own)
+		if gear:
+			var top := p.position + Vector3(0, 0.02, 0)
+			var gap := _gap_above(v, p, top, faces)
+			if gap > 0.03 and gap < 2.5:
+				_add_gear_mount(p, gap + 0.06)
+			continue
+		# gövdenin içine gömülü (eksene yakın, dibi gövdenin içinde) parçalar pilon istemez
+		var top_pt := Vector3(box.get_center().x, box.end.y - 0.02, box.get_center().z)
+		var gap2 := _gap_above(v, p, top_pt, faces)
+		if gap2 < 0.04 or gap2 > 2.5:
+			continue
+		var length := clampf(box.size.z * 0.6, 0.35, 3.5)
+		var height := gap2 + 0.12
+		var w := clampf(box.size.x * 0.14, 0.05, 0.2)
+		var prof := [Vector2(-length * 0.5, 0.0), Vector2(-length * 0.45, 0.6), Vector2(-length * 0.3, 1.0),
+			Vector2(length * 0.2, 0.85), Vector2(length * 0.5, 0.0)]
+		var mi := MeshInstance3D.new()
+		mi.name = "Pylon"
+		mi.mesh = MeshFactory.lathe(prof, 12)
+		mi.material_override = material("paint_dark")
+		var center := Vector3(top_pt.x, top_pt.y + height * 0.5 - 0.04, top_pt.z)
+		mi.position = p.transform.affine_inverse() * center
+		mi.basis = p.basis.inverse() * Basis().scaled(Vector3(w, height * 0.5, 1.0))
+		p.add_child(mi)
+
+
+## Takım dikmesinin üstüne, kanat altına / gövdeye uzanan sabit bağlantı borusu ve küçük kaporta.
+static func _add_gear_mount(p: Part, len: float) -> void:
+	var vis := p.get_node_or_null("Visual") as Node3D
+	if vis == null:
+		return
+	var s := absf(vis.scale.y)
+	var r := clampf(p.size.x * 0.12, 0.06, 0.16)
+	var mi := MeshInstance3D.new()
+	mi.name = "StrutMount"
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = r * 1.15 / s
+	cyl.bottom_radius = r / s
+	cyl.height = len / s
+	mi.mesh = cyl
+	mi.material_override = material("metal")
+	mi.position = Vector3(0, len * 0.5 / s, 0)
+	vis.add_child(mi)
+	# yan destek (çapraz dikme) kanadın altına doğru
+	var brace := MeshInstance3D.new()
+	var bc := CylinderMesh.new()
+	bc.top_radius = r * 0.45 / s
+	bc.bottom_radius = r * 0.45 / s
+	bc.height = len * 1.1 / s
+	brace.mesh = bc
+	brace.material_override = material("metal")
+	var side := -signf(p.position.x) if absf(p.position.x) > 0.2 else 1.0
+	brace.position = Vector3(side * len * 0.22 / s, len * 0.45 / s, 0)
+	brace.rotation = Vector3(0, 0, side * 0.45)
+	vis.add_child(brace)
+
+
+## (from) noktasından yukarı (+y) ilk başka-parça yüzeyine olan mesafe; yoksa INF.
+static func _gap_above(v: Vessel, self_part: Part, from: Vector3, faces: Dictionary) -> float:
+	var best := INF
+	for o in v.parts:
+		if o == self_part:
+			continue
+		var tris: Array = faces[o]
+		for t in range(0, tris.size(), 3):
+			var a: Vector3 = tris[t]
+			var b: Vector3 = tris[t + 1]
+			var c: Vector3 = tris[t + 2]
+			if from.x < minf(a.x, minf(b.x, c.x)) or from.x > maxf(a.x, maxf(b.x, c.x)):
+				continue
+			if from.z < minf(a.z, minf(b.z, c.z)) or from.z > maxf(a.z, maxf(b.z, c.z)):
+				continue
+			var hit: Variant = Geometry3D.ray_intersects_triangle(from, Vector3.UP, a, b, c)
+			if hit != null:
+				best = minf(best, (hit as Vector3).y - from.y)
+	return best
+
+
+## Parçanın taşıt uzayındaki görünür, opak üçgenleri (efekt ve cam hariç).
+static func _part_faces(p: Part) -> Array:
+	var out := []
+	var stack: Array[Node] = [p]
+	while not stack.is_empty():
+		var nd: Node = stack.pop_back()
+		stack.append_array(nd.get_children())
+		if not nd is MeshInstance3D:
+			continue
+		var mi := nd as MeshInstance3D
+		if mi.mesh == null or mi.name == "Pylon":
+			continue
+		var mo := mi.material_override
+		if mo is StandardMaterial3D and (mo.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED or mo.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED):
+			continue
+		if mo is ShaderMaterial and not mo.has_meta("paint"):
+			continue
+		var xf := Transform3D.IDENTITY
+		var c: Node = mi
+		while c != null and c != p.get_parent():
+			xf = (c as Node3D).transform * xf
+			c = c.get_parent()
+		for f in mi.mesh.get_faces():
+			out.append(xf * f)
+	return out
+
+
+static func _faces_aabb(tris: Array) -> AABB:
+	var b := AABB(tris[0], Vector3.ZERO)
+	for t in tris:
+		b = b.expand(t)
+	return b

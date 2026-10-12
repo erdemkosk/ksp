@@ -16,7 +16,11 @@ func _physics_process(delta: float) -> void:
 		var ab := 0.0
 		for m in v.get_modules_of(AirbrakeModule):
 			ab = m.deploy
-		print("t=%.1f parça=%d hız=%d en_yüklü=%s %.2f hava_freni=%.2f kokpit=%s" % [_t, v.parts.size(), v.airspeed() * 3.6, worst, ws, ab, v.cockpit() != null])
+		var dmg := PackedStringArray()
+		for p in v.parts:
+			if p.hp < p.max_hp * 0.999:
+				dmg.append("%s %d%%" % [p.title, p.health_ratio() * 100.0])
+		print("t=%.1f parça=%d hız=%d en_yüklü=%s %.2f hava_freni=%.2f kokpit=%s hasarlı=%s" % [_t, v.parts.size(), v.airspeed() * 3.6, worst, ws, ab, v.cockpit() != null, dmg])
 	if Game.args.has("killwing") and absf(_t - 1.0) < delta * 0.6:
 		for p in v.parts.duplicate():
 			for m in p.modules:

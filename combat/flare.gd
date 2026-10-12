@@ -18,6 +18,11 @@ var _core: MeshInstance3D
 var _trail: PuffTrail
 
 
+## Atıldığından beri geçen süre (chaff bulutu ilk saniyelerde etkili).
+func age() -> float:
+	return _age
+
+
 static func drop(from: Vessel, count := 2) -> void:
 	for i in count:
 		var f := Flare.new()

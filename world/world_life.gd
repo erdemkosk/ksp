@@ -321,8 +321,16 @@ static func parked(index: int) -> Node3D:
 				p.remove_child(vis)
 				plane.add_child(vis)
 				vis.transform = xf
-		# tekerlek yerden: en alçak noktayı yaklaşık 1.7 m yukarıda tut
-		plane.position.y = 2.2 * PartLibrary.WORLD_SCALE + 0.05
+		# tekerlekler yere değsin: en alçak teker altına göre yükseklik (uçak boyuna göre değişir)
+		var low := -2.2 * PartLibrary.WORLD_SCALE
+		var found := false
+		for p in v.parts:
+			for m: Dictionary in p.def.get("modules", []):
+				if m.get("type", "") == "landing_gear":
+					var b := p.position.y - float(m.get("rest_length", 1.2)) - float(m.get("wheel_radius", 0.35))
+					low = b if not found else minf(low, b)
+					found = true
+		plane.position.y = -low + 0.05
 		v.free()
 	return holder
 

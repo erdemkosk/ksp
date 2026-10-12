@@ -2,13 +2,28 @@ class_name SamSite
 extends GroundTarget
 ## Yerden havaya füze (SAM) rampası: dönen arama radarı + 4 tüplü fırlatıcı.
 ## Uçak menzile (9 km) girip arazinin üstünde görünür olunca (yerden 120 m+) radar kilitlenir,
-## birkaç saniye sonra füze atar. Füzeler oyuncunun IR füzesiyle aynı güdümü kullanır; flare
-## ve sert manevra ile atlatılır. Alçak uçuş (arazi maskeleme) radardan saklar.
+## birkaç saniye sonra füze atar. Füzeler radar komutlu: rampa radarı izi tuttukça güdülür.
+## Alçak uçuş / arazi maskesi izi koparır (füze kör kalır), füzeye dik uçuş (çentik) ve chaff
+## füzenin kilidini düşürebilir. Uçağın RWR'ı aramayı, kilidi ve atışı gösterir.
+
+## Sahnedeki etkin rampalar (RWR tarar).
+static var sites: Array[SamSite] = []
 
 const RANGE := 9000.0
 const MIN_AGL := 120.0
 const LOCK_TIME := 3.5
 const RELOAD := 13.0
+
+## Sistem değerleri (uzun menzilli SAM farklı kurar)
+var range_m := RANGE
+var min_agl := MIN_AGL
+var lock_time := LOCK_TIME
+var reload := RELOAD
+var long_range := false
+## Uzun menzilli sistem: ayrı arama ve takip radarı araçları. Arama radarı yoksa yalnız takip
+## radarının kendi kısa menzilinde arar; takip radarı yoksa kilitlenemez (füze atamaz).
+var search_unit: GroundTarget
+var track_unit: GroundTarget
 
 var missiles := 4
 var _radar: Node3D
@@ -85,26 +100,87 @@ static func _mat(c: Color) -> StandardMaterial3D:
 	return m
 
 
+func _enter_tree() -> void:
+	sites.append(self)
+
+
+func _exit_tree() -> void:
+	sites.erase(self)
+
+
+## Radarın kilitli izlediği uçak (yoksa null).
+func tracking() -> Vessel:
+	return null if destroyed or not is_instance_valid(_target) else _target
+
+
+## Kilit ilerlemesi 0..1 (RWR: arama → kilit).
+func lock_progress() -> float:
+	return clampf(_lock_t / LOCK_TIME, 0.0, 1.0)
+
+
+## Radar yayın yapıyor mu (radar avcısı füze ve RWR için).
+func emitting() -> bool:
+	if destroyed:
+		return false
+	if long_range:
+		return _alive(search_unit) or _alive(track_unit)
+	return true
+
+
+## Yayın kaynağının konumu (radar avcısı füzenin hedefi): arama radarı, yoksa takip radarı.
+func emitter_position() -> Vector3:
+	if long_range:
+		if _alive(track_unit) and _target:
+			return track_unit.global_position + Planet.up_at(track_unit.global_position) * 3.0
+		if _alive(search_unit):
+			return search_unit.global_position + Planet.up_at(search_unit.global_position) * 4.0
+		if _alive(track_unit):
+			return track_unit.global_position + Planet.up_at(track_unit.global_position) * 3.0
+	return _radar.global_position
+
+
+static func _alive(u: GroundTarget) -> bool:
+	return is_instance_valid(u) and not u.destroyed
+
+
+## Arama menzili: uzun menzilli sistemde arama radarı ölünce takip radarının 15 km'si kalır.
+func detect_range() -> float:
+	if long_range and not _alive(search_unit):
+		return 15000.0 if _alive(track_unit) else 0.0
+	return range_m
+
+
+## Radar bu uçağı görüyor mu (RCS, arazi, yer yankısı, çentik, karıştırma: Detection).
+func sees(v: Vessel) -> bool:
+	if destroyed or not emitting() or v.radar_altitude() < min_agl:
+		return false
+	return Detection.radar_sees(emitter_position(), detect_range(), v, true)
+
+
 func _physics_process(delta: float) -> void:
 	if destroyed:
+		_target = null
 		return
 	_radar.rotate_y(delta * (6.0 if _target else 2.0))
 	_cool -= delta
-	var v := nearest_enemy_vessel(RANGE)
-	var visible_ok := false
-	if v:
-		var agl := v.radar_altitude()
-		visible_ok = agl > MIN_AGL and line_of_sight(v.com_global())
+	var v := nearest_enemy_vessel(detect_range() * 1.3)
+	var visible_ok := v != null and sees(v)
+	if visible_ok:
+		Detection.report(team, v)
+	# kilit: uzun menzilli sistemde takip radarı gerekir
+	if visible_ok and long_range and not _alive(track_unit):
+		visible_ok = false
 	if visible_ok:
 		_target = v
-		_lock_t += delta
+		# chaff bulutu kilitlenmeyi geciktirir
+		_lock_t += delta * (1.0 - Chaff.near(v.com_global(), 250.0) * 0.9)
 		# fırlatıcı hedefe döner
 		var local := to_local(v.com_global())
 		_launcher.rotation.y = lerp_angle(_launcher.rotation.y, atan2(-local.x, -local.z), 1.0 - exp(-2.0 * delta))
 		if not _warned:
 			_warned = true
-			v.system_message.emit("RADAR UYARISI: SAM kilitleniyor!")
-		if _lock_t > LOCK_TIME and _cool <= 0.0 and missiles > 0:
+			v.system_message.emit("RADAR UYARISI: %s kilitleniyor!" % ("UZUN MENZİLLİ SAM" if long_range else "SAM"))
+		if _lock_t > lock_time and _cool <= 0.0 and missiles > 0 and v.com_global().distance_to(global_position) < range_m:
 			_fire(v)
 	else:
 		_target = null
@@ -118,14 +194,38 @@ func _fire(v: Vessel) -> void:
 	var up := Planet.up_at(global_position)
 	var to := (v.com_global() - global_position).normalized()
 	var m := Missile.new()
-	m.velocity = (up * 0.7 + to * 0.3).normalized() * 45.0
+	m.guidance = "radar"
+	m.launcher = self
+	m.can_go_active = false
+	m.long_range = long_range
+	m.team = team
+	m.velocity = (up * (0.8 if long_range else 0.7) + to * 0.3).normalized() * 45.0
 	m.target = v
 	get_parent().add_child(m)
 	m.global_position = _launcher.global_position + up * 2.5
 	m.look_at(m.global_position + m.velocity, up)
 	Sfx.play_at("missile_launch.ogg", m.global_position, 6.0, 0.85, 8000.0)
-	v.system_message.emit("SAM ATIŞI! — flare at, sert dön, alçal")
+	v.system_message.emit("SAM ATIŞI! — alçal ya da füzeye dik dön, chaff at")
 
 
 func _on_destroyed() -> void:
 	missiles = 0
+
+
+## Uzun menzilli SAM (S-300 tipi) bataryası: [fırlatıcı, arama radarı, takip radarı].
+## 40 km, büyük füze. Görev her birimi kendi yerine koyar (_add_unit).
+static func create_long_range() -> Array[GroundTarget]:
+	var sam := create_sam(Vector3.ZERO, 0.0)
+	sam.unit_name = "Uzun menzilli SAM"
+	sam.long_range = true
+	sam.range_m = 40000.0
+	sam.min_agl = 60.0
+	sam.lock_time = 5.0
+	sam.reload = 18.0
+	sam.missiles = 4
+	sam.hp = 600.0
+	var search := RadarStation.create_mobile("SAM arama radarı", 40000.0)
+	var track := RadarStation.make_truck("SAM takip radarı", 300.0, Vector3(3.0, 3.0, 0.35))
+	sam.search_unit = search
+	sam.track_unit = track
+	return [sam, search, track]

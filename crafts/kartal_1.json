@@ -1,5 +1,6 @@
 {
 	"name": "Kartal-1",
+	"group": "Avcı",
 	"description": "Tek motorlu hafif avcı. Radar burnu, 20 mm top podu, iki IR füze.",
 	"paint": {"scheme": "gri", "number": "34"},
 	"parts": [

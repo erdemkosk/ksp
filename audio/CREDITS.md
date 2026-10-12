@@ -22,3 +22,4 @@ Sesli uyarılar işletim sisteminin konuşma sentezi ile üretilir (kayıt dosya
 | bullet_whizz_1/2, ricochet_1/2, gun_rumble, buffet_loop | ffmpeg ile sentezlendi (bu proje) | — |
 
 Ek sesler: Joseph SARDIN - BigSoundBank.com
+| Kabin uğultusu/rüzgar hışırtısı, titreşim, takım/fren gürültüsü, sürtünme, çatırtı, gıcırtı, mermi tıkırtısı, anti-G iniltisi, uyarı tonları | Oyun içinde kodla sentezlenir (`audio/synth.gd`), dosya yok | — |

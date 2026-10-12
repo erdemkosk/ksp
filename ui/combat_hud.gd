@@ -53,13 +53,13 @@ func _loop(name: String) -> AudioStreamPlayer:
 ## Sol tık hedef kutusuna (imleç serbestken) ya da F4: radar temasını seç. Seçili hedef
 ## füze arayıcısının önceliğidir; aynı hedefe tekrar tık seçimi kaldırır.
 func _unhandled_input(event: InputEvent) -> void:
-	if not _ok() or not vessel.has_pilot() or vessel.radar() == null:
+	if not _ok() or not vessel.has_pilot() or (vessel.radar() == null and vessel.irst() == null):
 		return
 	if event.is_action_pressed("target_cycle"):
 		cycle_target()
 		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
-		for t in vessel.radar().contacts:
+		for t in vessel.sensor_contacts():
 			if not is_instance_valid(t) or t.parts.is_empty():
 				continue
 			var sp: Variant = _proj(t.com_global())
@@ -80,7 +80,7 @@ func designate(t: Vessel) -> void:
 ## Sıradaki temas: burna en yakın açıdan başlayarak döner.
 func cycle_target() -> void:
 	var list: Array = []
-	for t in vessel.radar().contacts:
+	for t in vessel.sensor_contacts():
 		if is_instance_valid(t) and not t.parts.is_empty() and t.team != vessel.team:
 			list.append(t)
 	if list.is_empty():
@@ -102,7 +102,9 @@ func _process(delta: float) -> void:
 	_blink += delta
 	_update_audio(delta)
 	_ccip_timer -= delta
-	if _ok() and vessel.selected_weapon == Vessel.WEAPON_BOMB and vessel.bombs_left() > 0 and _ccip_timer <= 0.0:
+	var bomb_sel := _ok() and ((vessel.selected_weapon == Vessel.WEAPON_BOMB and vessel.bombs_left() > 0) \
+		or (vessel.selected_weapon == Vessel.WEAPON_LGB and vessel.bombs_left(true) > 0))
+	if bomb_sel and _ccip_timer <= 0.0:
 		_ccip_timer = 0.05
 		_ccip = Bomb.simulate_impact(vessel.get_world_3d().direct_space_state, vessel.com_global() - vessel.up() * 0.8, vessel.linear_velocity)
 	elif _ok() and vessel.selected_weapon == Vessel.WEAPON_CARGO and vessel.cargo_left() > 0 and _ccip_timer <= 0.0:
@@ -123,9 +125,11 @@ func locked_target() -> Vessel:
 func _update_audio(delta: float) -> void:
 	var armed := _ok() and vessel.has_pilot() and vessel.master_arm and vessel.has_power()
 	var missile_mode := armed and vessel.selected_weapon == Vessel.WEAPON_MISSILE and vessel.missiles_left() > 0
-	var locked := missile_mode and locked_target() != null
+	var radar_mode := armed and vessel.selected_weapon == Vessel.WEAPON_RADAR and vessel.radar_missiles_left() > 0
+	var locked := (missile_mode or radar_mode) and locked_target() != null
 	_set_playing(_growl, missile_mode and not locked)
 	_set_playing(_lock, locked)
+	_update_rwr(delta)
 	# füze yaklaşma uyarısı: yaklaştıkça hızlanan bip
 	var inc := vessel.incoming_missile() if _ok() else null
 	if inc:
@@ -160,12 +164,21 @@ func _draw() -> void:
 			Vessel.WEAPON_MISSILE:
 				if vessel.missiles_left() > 0:
 					_missile_sight()
+			Vessel.WEAPON_RADAR:
+				if vessel.radar_missiles_left() > 0:
+					_radar_missile_sight()
 			Vessel.WEAPON_BOMB:
 				if vessel.bombs_left() > 0:
 					_bomb_sight()
+			Vessel.WEAPON_LGB:
+				if vessel.bombs_left(true) > 0:
+					_lgb_sight()
 	if vessel.selected_weapon == Vessel.WEAPON_CARGO and vessel.cargo_left() > 0:
 		_cargo_sight()
+	_own_missiles(s)
 	_missile_warning(s)
+	if powered and _has_rwr():
+		_draw_rwr(s)
 
 
 func _proj(world: Vector3) -> Variant:
@@ -193,15 +206,24 @@ func _enemies() -> Array[Vessel]:
 
 
 func _target_boxes() -> void:
-	var radar := vessel.radar()
-	if radar == null or not vessel.has_power():
+	if (vessel.radar() == null and vessel.irst() == null) or not vessel.has_power():
 		return
 	var locked := locked_target()
 	var c := size * 0.5
-	for t in radar.contacts:
+	for t in vessel.sensor_contacts():
 		if not is_instance_valid(t) or t.parts.is_empty():
 			continue
 		var col := FRIEND if t.team == vessel.team else (Color(0.72, 0.75, 0.78) if t.team == "sivil" else ENEMY)
+		# yalnız IRST'nin gördüğü temas: turuncu, mesafe yok (pasif sensör, açı izi)
+		if vessel.ir_only(t):
+			var ip: Variant = _proj(t.heat_position())
+			if ip != null:
+				_ring(ip, 16.0, Color(1.0, 0.6, 0.2))
+				_text_c(ip + Vector2(0, -24), "IR", 13, Color(1.0, 0.6, 0.2), _bold)
+				if t == vessel.designated:
+					_ring(ip, 22.0, Color(0.45, 0.85, 1.0))
+					_text_c(ip + Vector2(0, 36), "SEÇİLİ", 12, Color(0.45, 0.85, 1.0), _bold)
+			continue
 		var tp := t.com_global()
 		var to := tp - vessel.com_global()
 		var dist := to.length()
@@ -338,6 +360,100 @@ func _bomb_sight() -> void:
 	_text_c(Vector2(c.x, size.y * 0.48 + 194), "BOMBA  ×%d" % vessel.bombs_left(), 16, HUD_COLOR, _bold)
 
 
+## Lazer güdümlü bomba: podun işaretlediği nokta, güdümsüz düşüş noktası (CCIP) ve bırakma
+## bölgesi. Bomba kanatçıklarıyla düşüş noktasından işarete doğru yaklaşık irtifanın %90'ı
+## kadar sapabilir (süzülme payı).
+func _lgb_sight() -> void:
+	var c := size * 0.5
+	var y0 := size.y * 0.48 + 170
+	var col := Color(1, 0.95, 0.4)
+	var pod := vessel.targeting_pod()
+	var spot: Variant = pod.target_point() if pod else null
+	if _ccip != null:
+		var ip: Variant = _proj(_ccip)
+		if ip != null:
+			_ring(ip, 10.0, Color(HUD_COLOR, 0.6))
+	if spot == null:
+		_text_c(Vector2(c.x, y0), "LAZER YOK — hedefleme podunu hedefe kilitle (F8)" if pod else "HEDEFLEME PODU YOK — güdümsüz düşer", 15, HUD_COLOR)
+	else:
+		var sp: Variant = _proj(spot)
+		if sp != null:
+			_diamond(sp, 12.0, col)
+			_text_c(sp + Vector2(0, -20), "L", 14, col, _bold)
+		var me := vessel.com_global()
+		var up := Planet.up_at(me)
+		var to: Vector3 = (spot as Vector3) - me
+		var horiz := (to - up * to.dot(up)).length()
+		var h_above := maxf(-to.dot(up), 0.0)
+		var in_zone := false
+		if _ccip != null:
+			var miss: Vector3 = (spot as Vector3) - (_ccip as Vector3)
+			in_zone = (miss - up * miss.dot(up)).length() < maxf(500.0, h_above * 0.9)
+		_text_c(Vector2(c.x, y0), "LAZER İŞARETİ  %.1f km  ·  hedef %d m altta" % [horiz / 1000.0, roundi(h_above)], 16, col, _bold)
+		if in_zone and fmod(_blink, 0.6) < 0.4:
+			_text_c(Vector2(c.x, y0 + 24), "BIRAKMA BÖLGESİ — BIRAK", 16, col, _bold)
+		elif not in_zone:
+			_text_c(Vector2(c.x, y0 + 24), "bölge dışı — yaklaş ya da yüksel", 14, HUD_COLOR)
+	_text_c(Vector2(c.x, y0 + 46), "LAZER BOMBA  ×%d" % vessel.bombs_left(true), 16, HUD_COLOR, _bold)
+
+
+## Radar füzesi: seçili/izlenen hedef, atış menzili çubuğu (DLZ), kalan füze.
+func _radar_missile_sight() -> void:
+	var c := size * 0.5
+	var t := locked_target()
+	var y0 := size.y * 0.48 + 170
+	var col := Color(1, 0.95, 0.4)
+	# DLZ: sağda dikey çubuk, 0..20 km; geçerli atış bölgesi (1–16 km) kalın, hedef mesafesi ok
+	var bar := Rect2(c.x + 250, c.y - 110, 6, 220)
+	var max_km := 20.0
+	var y_of := func(km: float) -> float: return bar.end.y - bar.size.y * clampf(km / max_km, 0.0, 1.0)
+	draw_line(Vector2(bar.position.x, bar.position.y), Vector2(bar.position.x, bar.end.y), HUD_COLOR, 1.5)
+	var lo: float = y_of.call(MissileModule.RADAR_MIN_RANGE / 1000.0)
+	var hi: float = y_of.call(MissileModule.RADAR_RANGE / 1000.0)
+	draw_line(Vector2(bar.position.x + 3, lo), Vector2(bar.position.x + 3, hi), HUD_COLOR, 5.0)
+	for km in [5, 10, 15, 20]:
+		var y: float = y_of.call(float(km))
+		draw_line(Vector2(bar.position.x - 6, y), Vector2(bar.position.x, y), HUD_COLOR, 1.5)
+		_text(Vector2(bar.position.x + 12, y + 5), str(km), 12, HUD_COLOR)
+	if t:
+		var d := t.com_global().distance_to(vessel.com_global())
+		var y: float = y_of.call(d / 1000.0)
+		var p := Vector2(bar.position.x - 8, y)
+		draw_colored_polygon(PackedVector2Array([p, p + Vector2(-12, -7), p + Vector2(-12, 7)]), col)
+		var tp: Variant = _proj(t.com_global())
+		if tp != null:
+			_ring(tp, 30.0, col)
+		_text_c(Vector2(c.x, y0), "RADAR İZİ  %.1f km" % (d / 1000.0), 18, col, _bold)
+		if d < MissileModule.RADAR_RANGE * 0.8 and fmod(_blink, 0.6) < 0.4:
+			_text_c(Vector2(c.x, y0 + 24), "ATIŞ MENZİLİNDE", 15, col, _bold)
+	else:
+		_text_c(Vector2(c.x, y0), "İZ YOK — F4 / tık ile radar hedefi seç", 15, HUD_COLOR)
+	_text_c(Vector2(c.x, y0 + 44), "RADAR FÜZE  ×%d" % vessel.radar_missiles_left(), 16, HUD_COLOR, _bold)
+
+
+## Uçuştaki kendi radar füzelerimiz: hedefe kalan süre ve evre (veri bağı / aktif / iz kayıp).
+func _own_missiles(s: Vector2) -> void:
+	var y := s.y * 0.48 + 260
+	for mi in Missile.active:
+		if mi.shooter != vessel or not mi.is_radar():
+			continue
+		var text := ""
+		var col := HUD_COLOR
+		if is_instance_valid(mi.target):
+			var to: Vector3 = mi.target.com_global() - mi.global_position
+			var closing: float = maxf((mi.velocity - mi.target.linear_velocity).dot(to.normalized()), 50.0)
+			if mi.seeker_active:
+				text = "RF  AKTİF  %d sn" % roundi(to.length() / closing)
+				col = Color(1, 0.95, 0.4)
+			else:
+				text = "RF  VERİ BAĞI  %d sn — hedefi radarda tut" % roundi(to.length() / closing)
+		else:
+			text = "RF  İZ KAYIP" if not mi.seeker_active else "RF  ARIYOR"
+			col = Color(1, 0.6, 0.3)
+		_text_c(Vector2(s.x * 0.5, y), text, 14, col, _bold)
+		y += 18
+
+
 func _missile_warning(s: Vector2) -> void:
 	var inc := vessel.incoming_missile()
 	if inc == null:
@@ -351,8 +467,163 @@ func _missile_warning(s: Vector2) -> void:
 	if fmod(_blink, 0.4) < 0.28:
 		draw_colored_polygon(PackedVector2Array([p + dir * 26, p + n * 14, p - n * 14]), ENEMY)
 		_text_c(p - dir * 26 + Vector2(0, 6), "FÜZE %.1f km" % (d / 1000.0), 16, ENEMY, _bold)
-		if vessel.flares_left() > 0:
+		if inc.is_radar():
+			_text_c(Vector2(c.x, s.y * 0.2), "RADAR FÜZESİ — füzeye dik dön (çentik)%s" % ("  ·  Ş: CHAFF" if vessel.chaff_left() > 0 else ""), 18, ENEMY, _bold)
+		elif vessel.flares_left() > 0:
 			_text_c(Vector2(c.x, s.y * 0.2), "O: FLARE AT", 18, ENEMY, _bold)
+
+
+# --- RWR (radar uyarı alıcısı)
+# Uçağı tarayan / kilitlenen radarları ve kendi radarı açık füzeleri yön olarak gösterir.
+# Burun yukarıda; merkeze yakın = daha tehlikeli. S: SAM, F: avcı, M: aktif radar füzesi.
+# Seviye: 0 arama (yeşil), 1 kilit (sarı), 2 atış / füze (kırmızı, yanıp söner).
+
+const RWR_R := 70.0
+var _rwr: Array = []              ## [{pos, sym, level, key}]
+var _rwr_scan := 0.0
+var _rwr_levels := {}             ## key -> son seviye (yeni tehdit sesi için)
+var _rwr_beep := 0.0
+var _seen := false                ## herhangi bir düşman sensörü bizi görüyor (Detection.is_seen)
+
+
+func _has_rwr() -> bool:
+	return vessel.radar() != null or not vessel.available_weapons().is_empty()
+
+
+func _update_rwr(delta: float) -> void:
+	_rwr_scan -= delta
+	_rwr_beep -= delta
+	if not _ok() or not vessel.has_power() or not _has_rwr():
+		_rwr.clear()
+		return
+	if _rwr_scan <= 0.0:
+		_rwr_scan = 0.2
+		_scan_rwr()
+	var top := -1
+	for th in _rwr:
+		top = maxi(top, th["level"])
+	# kilit: yavaş çift bip; atış: füze uyarısı zaten hızlı bip çalar
+	if top == 1 and _rwr_beep <= 0.0:
+		_rwr_beep = 0.9
+		Sfx.play_ui("caution_beep.ogg", -10.0, 1.15)
+
+
+func _scan_rwr() -> void:
+	var me := vessel.com_global()
+	var out: Array = []
+	_seen = Detection.is_seen(vessel)
+	# RWR yayını pasif dinler: radarın kapsamındaysan (seni göremese bile) sembolü çıkar
+	for site in SamSite.sites:
+		if not site.is_inside_tree() or site.team == vessel.team or not site.emitting():
+			continue
+		var ep := site.emitter_position()
+		if ep.distance_to(me) > site.detect_range() * 1.3 or not Missile.terrain_clear(ep, me):
+			continue
+		var lvl := 1 if site.tracking() == vessel else 0
+		out.append({"pos": site.global_position, "sym": "S+" if site.long_range else "S", "level": lvl, "key": site.get_instance_id()})
+	for st in RadarStation.stations:
+		if not st.is_inside_tree() or st.team == vessel.team or not st.emitting() or st.unit_name.begins_with("SAM"):
+			continue
+		var ep2 := st.emitter_position()
+		if ep2.distance_to(me) < st.range_m * 1.2 and Missile.terrain_clear(ep2, me):
+			out.append({"pos": st.global_position, "sym": "EW", "level": 0, "key": st.get_instance_id()})
+	for sh in Warship.ships:
+		if is_instance_valid(sh) and not sh.destroyed and sh.team != vessel.team and sh.global_position.distance_to(me) < Warship.RADAR_RANGE * 1.2:
+			out.append({"pos": sh.global_position, "sym": "G", "level": 1 if sh.tracking() == vessel else 0, "key": sh.get_instance_id()})
+	for n in vessel.get_parent().get_children():
+		if not n is Vessel or n == vessel or n.parts.is_empty() or n.team == vessel.team or not n.has_power():
+			continue
+		var r: RadarModule = n.radar()
+		if r == null or not vessel in r.contacts:
+			# radarı seni görmese de karıştırma yayını çok uzaktan duyulur
+			if n.jamming() and n.com_global().distance_to(me) < EcmModule.EMIT_RANGE:
+				out.append({"pos": n.com_global(), "sym": "J", "level": 0, "key": n.get_instance_id()})
+			continue
+		var lvl := 0
+		for m in n.modules:
+			if m is MissileModule and m.radar_guided and m.target == vessel:
+				lvl = 1
+		out.append({"pos": n.com_global(), "sym": "A" if n.has_meta("awacs") else "F", "level": lvl, "key": n.get_instance_id()})
+	for mi in Missile.active:
+		if not mi.is_radar() or mi.victim != vessel or not is_instance_valid(mi.target):
+			continue
+		if mi.seeker_active:
+			out.append({"pos": mi.global_position, "sym": "M", "level": 2, "key": mi.get_instance_id()})
+		else:
+			# yarı aktif evre: fırlatanın sembolü "atış" olur
+			for th in out:
+				if is_instance_valid(mi.launcher) and th["key"] == mi.launcher.get_instance_id():
+					th["level"] = 2
+	# yeni tehdit ya da seviye artışı: kısa ton
+	var seen := {}
+	for th in out:
+		seen[th["key"]] = th["level"]
+		if th["level"] > int(_rwr_levels.get(th["key"], -1)):
+			Sfx.play_ui("lock_tone.ogg" if th["level"] == 0 else "caution_beep.ogg", -12.0 if th["level"] == 0 else -6.0, 0.7 if th["level"] == 0 else 1.4)
+			if th["level"] == 1:
+				var who: String = {"S": "SAM", "S+": "UZUN MENZİLLİ SAM", "G": "GEMİ", "A": "AWACS"}.get(th["sym"], "AVCI RADAR")
+				vessel.system_message.emit("RWR: %s KİLİDİ" % who)
+	_rwr_levels = seen
+	_rwr = out
+
+
+func _draw_rwr(s: Vector2) -> void:
+	var c := Vector2((s.x + Hud.PFD_W) * 0.5 + RWR_R + 22.0, s.y - RWR_R - 26.0)
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.02, 0.04, 0.03, 0.78)
+	bg.set_corner_radius_all(int(RWR_R + 10))
+	bg.border_color = Color(1, 1, 1, 0.14)
+	bg.set_border_width_all(1)
+	draw_style_box(bg, Rect2(c - Vector2.ONE * (RWR_R + 10), Vector2.ONE * (RWR_R + 10) * 2.0))
+	var grid := Color(0.4, 1.0, 0.6, 0.22)
+	for k in [0.33, 0.66, 1.0]:
+		draw_arc(c, RWR_R * k, 0.0, TAU, 48, grid, 1.0, true)
+	for a in 12:
+		var dir := Vector2.from_angle(a * TAU / 12.0)
+		draw_line(c + dir * RWR_R * (0.92 if a % 3 else 0.85), c + dir * RWR_R, grid, 1.5)
+	# kendi uçak işareti
+	draw_line(c + Vector2(0, -7), c + Vector2(0, 7), HUD_COLOR, 2.0)
+	draw_line(c + Vector2(-6, -1), c + Vector2(6, -1), HUD_COLOR, 2.0)
+	_text_c(c + Vector2(0, -RWR_R - 14), "RWR", 11, Color(0.6, 0.75, 0.7), _bold)
+	# görünürlük ışığı: herhangi bir düşman radarı / gözcü / veri bağı seni görüyor mu
+	var vis := Rect2(c + Vector2(-58, -RWR_R - 46), Vector2(116, 20))
+	var vcol := Color(1.0, 0.45, 0.25) if _seen else Color(0.35, 0.9, 0.5)
+	var vs := StyleBoxFlat.new()
+	vs.bg_color = Color(vcol, 0.18 if not _seen or fmod(_blink, 0.8) < 0.5 else 0.35)
+	vs.border_color = vcol
+	vs.set_border_width_all(1)
+	vs.set_corner_radius_all(4)
+	draw_style_box(vs, vis)
+	_text_c(vis.get_center() + Vector2(0, 5), "GÖRÜNÜYORSUN" if _seen else "GİZLİ", 12, vcol, _bold)
+	if vessel.jamming():
+		_text(c + Vector2(RWR_R - 18, -RWR_R + 2), "ECM", 11, Color(0.45, 0.85, 1.0), _bold)
+	if not vessel.radar_on and vessel.radar() != null:
+		_text(c + Vector2(-RWR_R - 4, -RWR_R + 2), "SESSİZ", 11, Color(1.0, 0.8, 0.35), _bold)
+	if _rwr.is_empty():
+		return
+	var inv := vessel.global_basis.inverse()
+	var top := 0
+	var me := vessel.com_global()
+	for th in _rwr:
+		top = maxi(top, th["level"])
+		var local: Vector3 = inv * (th["pos"] - me)
+		var dir := Vector2(local.x, local.z)
+		dir = dir.normalized() if dir.length() > 0.01 else Vector2.UP
+		var dist := (th["pos"] as Vector3).distance_to(me)
+		var rr := RWR_R * clampf(lerpf(0.3, 0.92, dist / 20000.0) - 0.12 * float(th["level"]), 0.18, 0.92)
+		var p := c + dir * rr
+		var lvl: int = th["level"]
+		var col := [Color(0.4, 1.0, 0.6), Color(1.0, 0.85, 0.3), ENEMY][lvl] as Color
+		if lvl == 2 and fmod(_blink, 0.3) > 0.18:
+			continue
+		_text_c(p + Vector2(0, 6), th["sym"], 17, col, _bold)
+		if lvl >= 1:
+			_diamond(p, 13.0, col)
+		if lvl == 2:
+			_ring(p, 17.0, col)
+	var label := ["ARAMA", "KİLİT", "ATIŞ"][top] as String
+	var lcol := [Color(0.4, 1.0, 0.6), Color(1.0, 0.85, 0.3), ENEMY][top] as Color
+	_text_c(c + Vector2(0, RWR_R + 22), label, 13, lcol, _bold)
 
 
 # --- paneller

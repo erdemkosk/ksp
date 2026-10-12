@@ -1,0 +1,27 @@
+{
+	"name": "Arı Kısa Avcı",
+	"group": "Avcı",
+	"description": "F-5 tipi kısa, tıknaz avcı: keskin elmas burun, alçak kanopi, kısaltılmış tank (uzunluk ×0.6), ikiz motor adaptörüyle iki J-40, küçük trapez kanat ve uçlarında IR füzeler. Hafif, çevik, kısa menzilli.",
+	"paint": {"scheme": "kamuflaj", "number": "21"},
+	"parts": [
+		{"part": "nose_chine",     "pos": [0, 0, -5.6]},
+		{"part": "cockpit_low",    "pos": [0, 0, -3.0]},
+		{"part": "tank_long",      "pos": [0, 0, -0.3], "stretch": [1.0, 1.0, 0.6]},
+		{"part": "twin_adapter",   "pos": [0, 0, 1.9]},
+		{"part": "jet_engine_small", "pos": [0.69, 0, 3.84], "mirror": true},
+		{"part": "intake_side",    "pos": [0.88, 0.1, -1.0], "mirror": true},
+
+		{"part": "wing_custom",    "pos": [2.35, -0.2, -0.144], "rot": [1, 0, 0], "mirror": true,
+			"wing": {"span": 3.4, "root": 2.6, "tip": 1.2, "sweep": 27.0, "thick": 0.06, "crank": 0.0, "crank_sweep": 0.0}},
+		{"part": "elevon",         "pos": [2.6, -0.2, 1.65], "mirror": true},
+		{"part": "wingtip_rail",   "pos": [4.17, -0.2, 0.75], "mirror": true},
+		{"part": "gun_pod",        "pos": [0.72, -0.35, -2.4]},
+
+		{"part": "stabilator",     "pos": [2.15, 0, 4.0], "mirror": true},
+		{"part": "fin_vertical",   "pos": [0, 1.75, 2.6], "rot": [0, 0, 90]},
+		{"part": "rudder",         "pos": [0, 1.6, 3.95], "rot": [0, 0, 90]},
+
+		{"part": "gear_nose",      "pos": [0, -0.6, -4.0]},
+		{"part": "gear_main",      "pos": [1.2, -0.6, 1.0], "mirror": true}
+	]
+}

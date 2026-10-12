@@ -1,0 +1,27 @@
+{
+	"name": "Serçe Delta Avcı",
+	"group": "Avcı",
+	"description": "Mirage tipi kuyruksuz delta: büyük üçgen kanat, yatay kuyruk yok — kanadın firar kenarındaki elevonlar hem yunuslama hem yatış verir. Balon kanopi, sırt kamburu, J-70. Delta yüksek hücum açısında geç stall olur ama hız kaybeder.",
+	"paint": {"scheme": "çöl", "number": "07"},
+	"parts": [
+		{"part": "radar_nose",     "pos": [0, 0, -7.4]},
+		{"part": "cockpit_bubble", "pos": [0, 0, -5.0]},
+		{"part": "tank_long",      "pos": [0, 0, -1.5]},
+		{"part": "jet_engine",     "pos": [0, 0, 1.75]},
+		{"part": "spine_dorsal",   "pos": [0, 0.84, -1.6]},
+
+		{"part": "wing_custom",    "pos": [2.9, -0.2, -0.675], "rot": [1, 0, 0], "mirror": true,
+			"wing": {"span": 4.5, "root": 6.0, "tip": 0.4, "sweep": 50.0, "thick": 0.045, "crank": 0.0, "crank_sweep": 0.0}},
+		{"part": "elevon",         "pos": [1.6, -0.2, 2.6], "mirror": true},
+		{"part": "elevon",         "pos": [3.1, -0.2, 2.6], "mirror": true},
+		{"part": "missile_rail",   "pos": [3.2, -0.45, 0.4], "mirror": true},
+		{"part": "gun_pod",        "pos": [0.72, -0.35, -3.0]},
+		{"part": "flare_pod",      "pos": [0, -0.78, 0.6]},
+
+		{"part": "fin_vertical",   "pos": [0, 1.8, 1.8], "rot": [0, 0, 90]},
+		{"part": "rudder",         "pos": [0, 1.6, 3.15], "rot": [0, 0, 90]},
+
+		{"part": "gear_nose",      "pos": [0, -0.6, -5.6]},
+		{"part": "gear_main",      "pos": [1.4, -0.6, -0.5], "mirror": true}
+	]
+}

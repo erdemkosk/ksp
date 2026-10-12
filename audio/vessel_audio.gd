@@ -25,10 +25,19 @@ var _canopy_prev := false
 var _grounded_prev := {}
 var _buffet: AudioStreamPlayer3D
 var _rumble: AudioStreamPlayer3D
+var _drag: AudioStreamPlayer3D        ## iniş takımı / hava freni hava gürültüsü
+var _scrape: AudioStreamPlayer3D      ## gövde zemine sürtünüyor
+var _vel_prev := Vector3.ZERO
+var _air_vs := 0.0                    ## teker yere değmeden önceki dikey hız
+var _impact_cd := 0.0
+var _creak_t := 1.0
+var _contact := false
+var _scrape_lin := 0.0
 
 
 func setup(v: Vessel) -> void:
 	vessel = v
+	v.part_destroyed.connect(_on_part_destroyed)
 	for m in v.modules:
 		if m is EngineModule:
 			var e := EngineVoice.new()
@@ -50,14 +59,19 @@ func setup(v: Vessel) -> void:
 		_roll = _loop(anchor, "tire_roll.ogg", Vector3(0, -1.5, 3.0), false)
 		_buffet = _loop(anchor, "buffet_loop.ogg", Vector3(0, 0, 0.5), false)
 		_rumble = _loop(anchor, "gun_rumble.ogg", Vector3(0, 0, -1.0), false)
+		_drag = _loop(anchor, "", Vector3(0, -1.0, 1.0), false, Synth.get_stream("drag_rumble"))
+		_scrape = _loop(anchor, "", Vector3(0, -1.0, 0.0), false, Synth.get_stream("scrape"))
 
 
-func _loop(part: Part, file: String, offset: Vector3, rear: bool) -> AudioStreamPlayer3D:
+func _loop(part: Part, file: String, offset: Vector3, rear: bool, stream: AudioStream = null) -> AudioStreamPlayer3D:
 	var p := AudioStreamPlayer3D.new()
-	p.stream = Sfx.looped(file)
+	p.stream = stream if stream else Sfx.looped(file)
 	p.volume_db = -80.0
 	p.unit_size = 18.0
 	p.max_distance = 6000.0
+	# uzaklıkta tiz sesler havada söner (uzaktaki jet boğuk gürler)
+	p.attenuation_filter_cutoff_hz = 3200.0
+	p.attenuation_filter_db = -30.0
 	p.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_PHYSICS_STEP
 	p.position = offset
 	if rear:
@@ -78,6 +92,8 @@ func _process(_delta: float) -> void:
 	for p in _players:
 		if is_instance_valid(p):
 			p.bus = bus
+	# kendi uçağımızın kabininden: egzoz gürültüsü gövdeden süzülür (kanal filtresine ek kısma)
+	var ck := AudioManager.cockpit_of(vessel) * (1.0 - InteriorAudio.canopy_amount(vessel) * 0.5)
 
 	for e in _engines:
 		if not is_instance_valid(e.roar):
@@ -104,6 +120,11 @@ func _process(_delta: float) -> void:
 			e.whine.volume_db -= 14.0
 			e.prop.volume_db = linear_to_db(maxf(smoothstep(0.05, 0.3, n2) * (0.5 + 0.6 * n2), 0.0001)) + 3.0
 			e.prop.pitch_scale = 0.42 + 0.75 * n2
+			e.prop.volume_db -= 5.0 * ck
+		e.roar.volume_db -= 8.0 * ck
+		e.hiss.volume_db -= 10.0 * ck
+		e.burner.volume_db -= 6.0 * ck
+		e.whine.volume_db -= 3.0 * ck
 		# ateşleme anı: boğuk bir "vuff"
 		if flame > 0.0 and not e.lit:
 			Sfx.play_at("ignition.ogg", e.engine.part.global_position, 0.0, randf_range(0.9, 1.05))
@@ -136,6 +157,16 @@ func _process(_delta: float) -> void:
 			# ses üstü: şok dalgasının boğuk gürlemesi
 			_airflow.volume_db += 3.0
 			_airflow.pitch_scale *= 0.8
+		_airflow.volume_db -= 4.0 * ck     # kabinde rüzgarı InteriorAudio verir
+		if is_instance_valid(_drag):
+			var qn := clampf(q / 40000.0 * 2.2, 0.0, 1.0)
+			var brake := 0.0
+			for m in vessel.modules:
+				if m is AirbrakeModule:
+					brake = maxf(brake, m.deploy)
+			var d := qn * (0.55 * vessel.gear_deploy() + 0.85 * brake)
+			_drag.volume_db = linear_to_db(maxf(d, 0.0001)) - 2.0 - 6.0 * ck
+			_drag.pitch_scale = 0.8 + 0.3 * clampf(speed / 250.0, 0.0, 1.0)
 
 	# stall titremesi ve top gümbürtüsü
 	if is_instance_valid(_buffet):
@@ -180,6 +211,14 @@ func _tire_sounds() -> void:
 	for m in vessel.modules:
 		if m is LandingGearModule:
 			var was: bool = _grounded_prev.get(m, true)
+			if m.grounded and not was and _air_vs < -3.0:
+				# sert iniş: amortisör dibe vurur; çok sertse gövde çatırdar
+				var k := clampf((-_air_vs - 3.0) / 5.0, 0.0, 1.0)
+				Sfx.play_stream_at(Synth.get_stream("thud"), m.part.global_position, linear_to_db(0.35 + 0.65 * k) + 4.0, randf_range(0.85, 1.0), 1500.0)
+				if _air_vs < -6.0:
+					Sfx.play_stream_at(Synth.get_stream("crunch_%d" % (randi() % 3)), m.part.global_position, linear_to_db(k) + 2.0, randf_range(0.8, 1.0), 1500.0)
+				AudioManager.cockpit_impact(vessel, 0.3 + 0.7 * k)
+				_air_vs = 0.0
 			if m.grounded and not was and vessel.ground_speed() > 15.0:
 				# teker yere değdi: hızla orantılı cıyaklama
 				Sfx.play_at("tire_screech.ogg", m.part.global_position, linear_to_db(clampf(vessel.ground_speed() / 80.0, 0.2, 1.0)) - 6.0, randf_range(0.9, 1.1))
@@ -190,3 +229,77 @@ func _tire_sounds() -> void:
 	if is_instance_valid(_roll):
 		_roll.volume_db = linear_to_db(clampf(rolling / 70.0, 0.0001, 1.0)) - 8.0
 		_roll.pitch_scale = 0.7 + clampf(rolling / 120.0, 0.0, 0.8)
+
+
+# ------------------------------------------------------------------ darbeler ve sürtünme
+
+func _physics_process(delta: float) -> void:
+	if not is_instance_valid(vessel) or vessel.parts.is_empty():
+		return
+	_impact_cd -= delta
+	var v := vessel.linear_velocity
+	var dv := (v - _vel_prev).length()
+	_vel_prev = v
+	var any_wheel := false
+	for m in vessel.modules:
+		if m is LandingGearModule and m.grounded:
+			any_wheel = true
+	if not any_wheel:
+		_air_vs = vessel.vertical_speed()
+	var contacts := vessel.get_contact_count()
+	# gövde / parça bir şeye çarptı: tek adımda ani hız değişimi (aerodinamik kuvvetlerin çok üstünde)
+	var hit := contacts > 0 and (dv > 2.5 or (not _contact and dv > 1.2))
+	if hit and _impact_cd <= 0.0:
+		var k := clampf((dv - 1.0) / 12.0, 0.15, 1.0)
+		var pos := vessel.com_global() - vessel.up() * 1.0
+		Sfx.play_stream_at(Synth.get_stream("crunch_%d" % (randi() % 3)), pos, linear_to_db(k) + 6.0, randf_range(0.8, 1.1), 2000.0)
+		if k > 0.4:
+			Sfx.play_at("impact_metal_%d.ogg" % (1 + randi() % 2), pos, linear_to_db(k) - 2.0, randf_range(0.6, 0.8), 1200.0)
+		AudioManager.cockpit_impact(vessel, k)
+		_impact_cd = 0.18
+	_contact = contacts > 0
+	# sürtünme: gövde (teker değil) zemine değerken kayıyor
+	if is_instance_valid(_scrape):
+		var slide := vessel.ground_speed() if contacts > 0 else 0.0
+		var target := clampf((slide - 2.0) / 40.0, 0.0, 1.0)
+
+		_scrape_lin = move_toward(_scrape_lin, target, delta * 4.0)
+		_scrape.volume_db = linear_to_db(maxf(_scrape_lin, 0.0001)) + 3.0
+		_scrape.pitch_scale = 0.75 + clampf(slide / 80.0, 0.0, 0.6)
+	# aşırı yük: gövde gıcırdar (yapı limitine yaklaşınca sıklaşır)
+	_creak_t -= delta
+	if vessel.max_stress > 0.65 and _creak_t <= 0.0:
+		var s := clampf((vessel.max_stress - 0.65) / 0.35, 0.0, 1.0)
+		_creak_t = lerpf(1.6, 0.5, s) * randf_range(0.8, 1.2)
+		var ck := AudioManager.cockpit_of(vessel)
+		Sfx.play_stream_at(Synth.get_stream("creak_%d" % (randi() % 2)), vessel.com_global(), linear_to_db(0.3 + 0.7 * s) - 4.0 + 4.0 * ck, randf_range(0.85, 1.15), 400.0)
+
+
+## Parça koptu / parçalandı: metal yırtılması ve ezilme (patlama sesini Vessel çalar).
+func _on_part_destroyed(part: Part) -> void:
+	if not is_instance_valid(vessel):
+		return
+	var pos := part.global_position if is_instance_valid(part) and part.is_inside_tree() else vessel.com_global()
+	Sfx.play_stream_at(Synth.get_stream("crunch_%d" % (randi() % 3)), pos, 4.0, randf_range(0.7, 0.9), 2500.0)
+	Sfx.play_stream_at(Synth.get_stream("creak_%d" % (randi() % 2)), pos, 0.0, randf_range(1.2, 1.5), 1000.0)
+	AudioManager.cockpit_impact(vessel, 0.9)
+
+
+## Hata ayıklama: etkin katmanların sesi (dB).
+func debug_layers() -> String:
+	var out := PackedStringArray()
+	var named := {"airflow": _airflow, "buffet": _buffet, "drag": _drag, "scrape": _scrape, "roll": _roll}
+	if not _engines.is_empty():
+		var e := _engines[0]
+		named["roar"] = e.roar
+		named["hiss"] = e.hiss
+		named["whine"] = e.whine
+		named["burner"] = e.burner
+		if e.prop:
+			named["prop"] = e.prop
+	for k in named:
+		var p: Variant = named[k]
+		if is_instance_valid(p) and p.volume_db > -60.0:
+			out.append("%s=%.1fdB" % [k, p.volume_db])
+	var bus: String = str(_airflow.bus) if is_instance_valid(_airflow) else "?"
+	return "kanal=%s %s" % [bus, ", ".join(out) if not out.is_empty() else "(sessiz)"]

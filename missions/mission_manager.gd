@@ -37,8 +37,11 @@ const DEFS := [
 	{"id": "heli", "title": "Helikopter Avı", "level": 2,
 		"brief": "İki düşman saldırı helikopteri Dereköy (~23 km kuzey) çevresinde alçakta devriye geziyor. İkisini de düşür. Helikopterler radarda görünmez, yavaş ve alçaktır; yaklaşırsan sana dönüp topla ateş ederler.",
 		"start": "air", "alt": 1200.0, "z": -6000.0},
+	{"id": "ikmal", "title": "Havada İkmal", "level": 2,
+		"brief": "Yakıtın azaldı. Önündeki tanker (Deve) düz uçuyor, arkasından ikmal hortumu sarkıyor. Arkasına geç, hızını eşle ve probu yavaşça sepete sok (en çok 6 m/s yaklaşma). Bağlıyken pozisyonu koru: 1500 kg yakıt al, sonra üsse dön. Gerekli: havada ikmal probu (burnun yanına/üstüne takılır).",
+		"start": "air", "alt": 2600.0, "z": 3000.0},
 	{"id": "sam", "title": "Hava Savunmasını Kır", "level": 3,
-		"brief": "Dereköy'ün güneyindeki iki SAM rampası bölgeyi kapatıyor. 9 km içinde ve yerden 120 m üstünde görünürsen radar kilitlenir ve füze atar: flare at, sert dön ya da vadilerde alçak uç (arazi seni saklar). Rampaları uçaksavar topları koruyor. İki SAM'ı da yok et.",
+		"brief": "Dereköy'ün güneyindeki iki SAM rampası bölgeyi kapatıyor. 9 km içinde ve yerden 120 m üstünde görünürsen radar kilitlenir ve radar güdümlü füze atar (RWR'da S). Vadilerde alçak uç (arazi radarı keser), rampaya dik uç (çentik: Doppler radarı seni kaybeder) ya da füze yaklaşınca chaff at (O). Rampaları uçaksavar topları koruyor. İki SAM'ı da yok et.",
 		"start": "air", "alt": 900.0, "z": -4000.0},
 	{"id": "ustunluk", "title": "Hava Üstünlüğü", "level": 3,
 		"brief": "Üç düşman avcı iki dalga hâlinde geliyor: önce bir, sonra iki. Hepsini düşür ve hayatta kal.",
@@ -48,6 +51,8 @@ const DEFS := [
 const RING_RADIUS := 55.0
 const SAHIN_B := "res://crafts/sahin_b.json"
 const SAM_SITES := [Vector2(5300, -19600), Vector2(7400, -20600)]
+const TANKER_SPEED := 135.0
+const REFUEL_GOAL := 1500
 
 var main: Node
 var def := {}
@@ -79,6 +84,7 @@ var _comfort := 100.0
 var _last_vs := 0.0
 var _airborne_t := 0.0
 var _inside := 0
+var _tanker: Vessel
 
 
 static func get_def(id: String) -> Dictionary:
@@ -155,6 +161,17 @@ func setup() -> void:
 				_add_unit(SamSite.create_sam(Vector3.ZERO, 0.0), p)
 			for p: Vector2 in [Vector2(5600, -19200), Vector2(6900, -20900), Vector2(6200, -20200)]:
 				_add_unit(AaaGun.create_aaa(Vector3.ZERO, 0.0), p)
+		"ikmal":
+			objectives = [_obj("Tankere bağlan"), _obj("Yakıt al (0/%d kg)" % REFUEL_GOAL), _obj("Üsse dön (3 km)")]
+			if main.vessel.probe() == null:
+				_pending_fail = "Uçakta havada ikmal probu yok (hangarda 'Havada İkmal Probu' tak)"
+			else:
+				# yakıt %25'e iner: ikmal gerçekten gerekli
+				for m in main.vessel.modules:
+					if m is FuelTankModule:
+						m.fuel = m.capacity * 0.25
+				main.vessel.recalc_mass()
+				_spawn_tanker(Vector3(0, 2600, 3000 - 1800))
 		"onleme":
 			objectives = [_obj("Bombardıman 1"), _obj("Bombardıman 2"), _obj("Üssü koru")]
 			for i in 2:
@@ -226,6 +243,63 @@ func _spawn_enemy(p: Vector3, heading_deg: float, skill: float, aggressive: bool
 	return e
 
 
+## Dost tanker: Katır gövdesi, sivil boya, kuzeye düz ve sabit hızla uçar; uzun ayaklarla
+## yarış pisti çizer. Arkasına ikmal hortumu (Drogue) takılır.
+func _spawn_tanker(p: Vector3) -> void:
+	var pos := world_point(p.x, p.z, p.y)
+	var frame := Planet.local_basis(pos)
+	var craft := VesselBuilder.load_craft("res://crafts/katir.json")
+	craft["paint"] = {"scheme": "kırmızı-beyaz", "number": "T-01"}
+	var t := VesselBuilder.build(craft)
+	t.name = "Tanker"
+	t.craft_name = "Tanker Deve"
+	t.team = main.vessel.team
+	t.transform = Transform3D(frame, pos)       # burun kuzeye (-z)
+	t.linear_velocity = -frame.z * TANKER_SPEED
+	main.world.add_child(t)
+	t.set_gear_instant(false)
+	t.set_hot()
+	t.lights_on = true
+	var ai := AIPilot.new()
+	ai.vessel = t
+	ai.aggressive = false
+	ai.altitude = p.y
+	ai.speed = TANKER_SPEED
+	ai.leg_time = 240.0
+	t.add_child(ai)
+	_tanker = t
+	Drogue.attach(t)
+
+
+func _check_refuel(v: Vessel) -> void:
+	var probe := v.probe()
+	if probe == null:
+		return
+	if not is_instance_valid(_tanker) or _tanker.parts.is_empty():
+		_finish(false, "Tanker kaybedildi")
+		return
+	if not objectives[0]["done"]:
+		nav_point = _tanker.com_global()
+		nav_label = "TANKER"
+		if probe.connected():
+			objectives[0]["done"] = true
+			_message("Bağlandın! Pozisyonu koru.", 3.0)
+		return
+	if not objectives[1]["done"]:
+		nav_point = _tanker.com_global()
+		nav_label = "TANKER"
+		objectives[1]["text"] = "Yakıt al (%d/%d kg)" % [mini(int(probe.received), REFUEL_GOAL), REFUEL_GOAL]
+		if probe.received >= REFUEL_GOAL:
+			objectives[1]["done"] = true
+			_message("Yakıt tamam — ayrıl ve üsse dön.", 4.0)
+		return
+	nav_point = world_point(0, 600, 300.0)
+	nav_label = "ANA ÜS"
+	if _near_base(v, 3000.0):
+		objectives[2]["done"] = true
+		_finish(true, "İkmal tamamlandı")
+
+
 ## Bombardıman: üsse doğru düz uçar (devriye, dönmez).
 func _set_bomber(e: Vessel) -> void:
 	for c in e.get_children():
@@ -239,9 +313,11 @@ func _spawn_wave() -> void:
 	if _wave == 1:
 		_spawn_enemy(Vector3(0, 2600, -9000), 180.0, 0.45, true, "Düşman 1")
 	else:
-		_spawn_enemy(Vector3(-2000, 3000, -11000), 160.0, 0.55, true, "Düşman 2")
-		_spawn_enemy(Vector3(2500, 2400, -12000), 200.0, 0.6, true, "Düşman 3 (Şahin)", SAHIN_B)
-		_message("2. DALGA: iki düşman kuzeyden geliyor!", 4.0)
+		# kol: lider + sağ arkasında kanat adamı (birlikte saldırır, birbirini korur)
+		var lead := _spawn_enemy(Vector3(-2000, 3000, -11000), 160.0, AIPilot.LEVELS["tecrübeli"], true, "Düşman 2")
+		var wing := _spawn_enemy(Vector3(-2380, 3040, -11020), 160.0, 0.6, true, "Düşman 3 (Şahin)", SAHIN_B)
+		AIPilot.pair(lead, wing)
+		_message("2. DALGA: iki düşman kol hâlinde kuzeyden geliyor!", 4.0)
 
 
 func _add_ring(surface: Vector3, dir_surface: Vector3) -> void:
@@ -300,6 +376,8 @@ func _physics_process(delta: float) -> void:
 			_check_units(v, "Helikopterler", "HELİKOPTER", func(n: Node) -> bool: return n is Helicopter)
 		"sam":
 			_check_units(v, "SAM rampaları", "SAM", func(n: Node) -> bool: return n is SamSite)
+		"ikmal":
+			_check_refuel(v)
 		"onleme":
 			_check_intercept(v)
 		"it":
@@ -915,7 +993,7 @@ static func briefing(id: String) -> Dictionary:
 			obj = ["İki saldırı helikopterini düşür", "Yaklaşınca topla ateş ederler"]
 		"sam":
 			pts = [["SAM 1", SAM_SITES[0], red], ["SAM 2", SAM_SITES[1], red], ["Sen", Vector2(0, -4000), green]]
-			obj = ["İki SAM rampasını yok et", "9 km içinde 120 m üstünde görünme — alçak uç ya da flare at"]
+			obj = ["İki SAM rampasını yok et", "9 km içinde 120 m üstünde görünme — alçak uç ya da rampaya dik dön"]
 		"onleme":
 			pts = [["Bombardıman 1", Vector2(-800, -26000), red], ["Bombardıman 2", Vector2(800, -27500), red]]
 			obj = ["İki bombardımanı üsse 3 km yaklaşmadan düşür", "Süre 5 dakika"]

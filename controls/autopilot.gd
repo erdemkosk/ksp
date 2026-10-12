@@ -10,10 +10,14 @@ var hold_speed := false
 var target_altitude := 1000.0
 var target_heading := 0.0     ## derece
 var target_speed := 200.0     ## m/s
+## Arazi takibi (TF): önündeki 8 saniyelik yolun en yüksek yerinin tf_agl üstünde uçar
+## (vadileri izler, tepelerin üstünden atlar). İrtifa tutmanın yerine geçer.
+var terrain_follow := false
+var tf_agl := 100.0
 
 
 func any_active() -> bool:
-	return level or hold_altitude or hold_heading or hold_speed
+	return level or hold_altitude or hold_heading or hold_speed or terrain_follow
 
 
 func disengage() -> void:
@@ -21,6 +25,24 @@ func disengage() -> void:
 	hold_altitude = false
 	hold_heading = false
 	hold_speed = false
+	terrain_follow = false
+
+
+## TF: uçuş yolu boyunca (yatay hızla) önümüzdeki arazinin en yüksek noktası (deniz 0).
+static func ground_ahead(v: Vessel, horizon_s := 8.0) -> float:
+	var pos := v.com_global()
+	var up := Planet.up_at(pos)
+	var vel := v.linear_velocity
+	var h_vel := vel - up * vel.dot(up)
+	if h_vel.length() < 20.0:
+		h_vel = v.forward() * 60.0
+	var top := 0.0
+	var t := 0.0
+	while t <= horizon_s:
+		var p := pos + h_vel * t
+		top = maxf(top, TerrainGen.height(Planet.surface_dir(p)))
+		t += 0.5 if t < 3.0 else 1.0
+	return top
 
 
 ## Hedefleri mevcut uçuş durumuna eşitler (bir mod açılınca çağrılır).
@@ -40,7 +62,16 @@ func compute(v: Vessel) -> Dictionary:
 		desired_roll = clampf(err * 1.5, -35.0, 35.0)
 	if level or hold_heading:
 		out["roll"] = clampf((desired_roll - v.roll_deg()) * 0.035 + w.z * 0.8, -1.0, 1.0)
-	if hold_altitude:
+	if terrain_follow:
+		# yükselirken sert, alçalırken yumuşak (tepeyi geçince hemen dalmasın)
+		var want := ground_ahead(v) + tf_agl
+		var err := want - v.altitude()
+		var desired_vs := clampf(err * (0.45 if err > 0.0 else 0.18), -30.0, 70.0)
+		var vs_err := desired_vs - v.vertical_speed()
+		var desired_pitch := clampf(vs_err * 0.5 + rad_to_deg(asin(clampf(desired_vs / maxf(v.airspeed(), 30.0), -1, 1))), -20.0, 30.0)
+		desired_pitch += absf(v.roll_deg()) * 0.08
+		out["pitch"] = clampf((desired_pitch - v.pitch_deg()) * 0.08 - w.x * 1.2, -1.0, 1.0)
+	elif hold_altitude:
 		var alt_err := target_altitude - v.altitude()
 		var desired_vs := clampf(alt_err * 0.15, -40.0, 40.0)
 		var vs_err := desired_vs - v.vertical_speed()

@@ -22,15 +22,15 @@ func physics_tick(delta: float) -> void:
 		return
 	_scan_timer = 0.25
 	contacts.clear()
-	if not vessel.has_power():
+	if not vessel.has_power() or not vessel.radar_on:
 		return
 	var origin := part.global_position
 	var fwd := -part.global_basis.z
 	for node in vessel.get_parent().get_children():
 		if node is Vessel and node != vessel and not node.parts.is_empty():
 			var to: Vector3 = node.com_global() - origin
-			var dist := to.length()
-			# radar kesit alanı ~ parça sayısı: küçük uçak daha kısa menzilde görünür
-			var rcs := clampf(float(node.parts.size()) / 16.0, 0.3, 2.0)
-			if dist < range_m * sqrt(rcs) and fwd.angle_to(to) < cone:
+			# RCS, arazi maskesi, yer yankısı (aşağı bakış), çentik ve karıştırma: Detection
+			if fwd.angle_to(to) < cone and Detection.radar_sees(origin, range_m, node):
 				contacts.append(node)
+				if vessel.team != "oyuncu":
+					Detection.report(vessel.team, node)

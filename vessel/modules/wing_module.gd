@@ -8,6 +8,11 @@ var lift_slope := 5.5
 var stall_angle := deg_to_rad(15.0)
 var cd0 := 0.012
 var induced_k := 0.08
+## Kuvvetin uygulandığı nokta (parça uzayı): ayarlanabilir kanatta ortalama veterin çeyreği.
+## Hazır kanatlarda sıfır (parça merkezi).
+var ac_offset := Vector3.ZERO
+## Uç plakası etkisi (winglet / kanat ucu rayı, AeroLinks): indüklenen direnç çarpanı
+var tip_factor := 1.0
 ## Kontrol yüzeylerinde hücum açısına eklenen sapma (radyan).
 var deflection := 0.0
 ## Önündeki kanatlar ve iz etkisi (AeroLinks): [[WingModule, katsayı], ...]
@@ -30,6 +35,12 @@ func setup(p: Dictionary) -> void:
 	cd0 = p.get("cd0", cd0)
 	var aspect: float = p.get("aspect_ratio", 4.0)
 	induced_k = 1.0 / (PI * 0.8 * aspect)
+	ac_offset = p.get("ac_offset", Vector3.ZERO)
+
+
+## Aerodinamik merkez (uçak uzayı) — hangarda kaldırma merkezi hesabı için.
+func ac_local() -> Vector3:
+	return part.transform * ac_offset
 
 
 func physics_tick(_delta: float) -> void:
@@ -37,7 +48,7 @@ func physics_tick(_delta: float) -> void:
 	var span := b.x
 	var normal := b.y
 	var chord := -b.z
-	var pos := part.global_position
+	var pos := part.global_position if ac_offset == Vector3.ZERO else part.global_transform * ac_offset
 
 	var v := vessel.air_velocity_at(pos)
 	v -= span * v.dot(span)  # açıklık yönündeki akış kaldırma üretmez
@@ -64,7 +75,7 @@ func physics_tick(_delta: float) -> void:
 	var blend := _stall_blend(aoa)
 	stalled = blend > 0.3
 	var cd := cd0 * Atmosphere.wave_drag(speed / Atmosphere.SPEED_OF_SOUND) \
-		+ induced_k * cl * cl * (1.0 - blend) \
+		+ induced_k * tip_factor * cl * cl * (1.0 - blend) \
 		+ blend * 1.6 * pow(sin(aoa), 2.0)
 
 	var lift_dir := normal - flow * normal.dot(flow)

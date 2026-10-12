@@ -1,27 +1,27 @@
 {
 	"name": "Turna",
-	"description": "Çift turbofanlı yolcu uçağı: 4 yolcu kabini (24 koltuk), okvari kanat, T kuyruk.",
+	"group": "Sivil",
+	"description": "Geniş gövdeli çift turbofanlı yolcu uçağı: 4 yolcu kabini (24 koltuk), okvari kanat, T kuyruk, 4 tekerli ağır takımlar.",
 	"paint": {"scheme": "sivil", "number": "TC-TRN"},
 	"parts": [
-		{"part": "nose_cone",        "pos": [0, 0, -2.25]},
-		{"part": "cockpit_civil",    "pos": [0, 0, 0]},
-		{"part": "passenger_cabin",  "pos": [0, 0, 3.0]},
-		{"part": "passenger_cabin",  "pos": [0, 0, 6.0]},
-		{"part": "passenger_cabin",  "pos": [0, 0, 9.0]},
-		{"part": "passenger_cabin",  "pos": [0, 0, 12.0]},
-		{"part": "tank_long",        "pos": [0, 0, 15.5]},
-		{"part": "tail_cone",        "pos": [0, 0, 18.25]},
+		{"part": "cockpit_airliner", "pos": [0, 0, -0.75], "scale": 1.5},
+		{"part": "passenger_cabin",  "pos": [0, 0, 4.5], "scale": 1.5},
+		{"part": "passenger_cabin",  "pos": [0, 0, 9.0], "scale": 1.5},
+		{"part": "passenger_cabin",  "pos": [0, 0, 13.5], "scale": 1.5},
+		{"part": "passenger_cabin",  "pos": [0, 0, 18.0], "scale": 1.5},
+		{"part": "tank_long",        "pos": [0, 0, 23.25], "scale": 1.5},
+		{"part": "tail_cone",        "pos": [0, 0, 27.4], "scale": 1.5},
 
-		{"part": "wing_main",        "pos": [2.6, -0.35, 7.6], "rot": [2, 0, 3], "mirror": true},
-		{"part": "wing_main",        "pos": [6.4, -0.15, 8.6], "rot": [2, 0, 3], "mirror": true},
-		{"part": "elevon",           "pos": [7.35, -0.15, 10.25], "mirror": true},
-		{"part": "turbofan",         "pos": [4.2, -1.35, 6.9], "mirror": true},
+		{"part": "wing_custom",      "pos": [6.75, -0.37, 13.35], "rot": [0.5, 0, 3], "mirror": true,
+			"wing": {"span": 11.7, "root": 4.5, "tip": 2.4, "sweep": 14.4, "thick": 0.09, "crank": 0.0, "crank_sweep": 0.0}},
+		{"part": "elevon",           "pos": [11.03, -0.15, 16.5], "mirror": true, "scale": 1.5},
+		{"part": "turbofan",         "pos": [6.3, -1.9, 11.85], "mirror": true, "scale": 1.5},
 
-		{"part": "fin_vertical",     "pos": [0, 1.8, 16.4], "rot": [0, 0, 90]},
-		{"part": "rudder",           "pos": [0, 1.6, 17.75], "rot": [0, 0, 90]},
-		{"part": "stabilator",       "pos": [1.65, 3.0, 17.4], "mirror": true},
+		{"part": "fin_vertical",     "pos": [0, 2.7, 24.6], "rot": [0, 0, 90], "scale": 1.5},
+		{"part": "rudder",           "pos": [0, 2.4, 26.63], "rot": [0, 0, 90], "scale": 1.5},
+		{"part": "stabilator",       "pos": [1.5, 4.4, 26.1], "mirror": true, "scale": 1.5},
 
-		{"part": "gear_nose",        "pos": [0, -0.6, -0.9]},
-		{"part": "gear_main",        "pos": [1.4, -0.6, 10.0], "mirror": true}
+		{"part": "gear_nose_heavy",  "pos": [0, -0.9, -1.35], "scale": 1.4},
+		{"part": "gear_main_heavy",  "pos": [2.1, -0.9, 14.8], "mirror": true, "scale": 1.25}
 	]
 }

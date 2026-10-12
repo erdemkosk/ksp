@@ -13,7 +13,7 @@ const START_MONEY := 25000
 const STARTER_PARTS := ["cockpit_mk1", "cockpit_civil", "nose_cone", "radar_nose", "tank_long", "tank_short",
 	"wing_main", "wing_small", "wing_straight", "elevon", "stabilator", "fin_vertical", "rudder",
 	"gear_main", "gear_nose", "jet_engine", "prop_engine", "gun_pod", "missile_rail", "flare_pod",
-	"passenger_cabin", "drag_chute", "airbrake"]
+	"passenger_cabin", "drag_chute", "airbrake", "pylon", "tail_cone"]
 const MISSIONS_FOR_LEVEL := {1: 0, 2: 2, 3: 5}
 
 signal changed
@@ -30,6 +30,9 @@ func _ready() -> void:
 	if unlocked.is_empty():
 		for id in STARTER_PARTS:
 			unlocked[id] = true
+	# şimdilik bütün parçalar açık (Ar-Ge kilidi yok)
+	for id in PartLibrary.ids():
+		unlocked[id] = true
 
 
 func sandbox() -> bool:

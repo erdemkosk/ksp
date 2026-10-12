@@ -1,7 +1,10 @@
 class_name AaaGun
 extends GroundTarget
-## Uçaksavar topu: çift namlulu 35 mm. 3 km içinde, görüş hattındaki uçağa öncül nişanla
-## kısa seriler atar (izli mermi). Hızlı ve yüksek uçan hedefi zor tutturur.
+## Uçaksavar topu: çift namlulu 35 mm. 3 km içinde, görüş hattındaki uçağı izler; mermi uçuş
+## süresi yetiyorsa (~2.4 km) öncül nişanla (hız + ivme, sürükleme ve düşüş telafili) kısa
+## seriler atar (izli mermi, namlu alevi). Taret dönüş hızı sınırlı: hızlı geçen alçak uçağı
+## yakalayamaz. Sakinken nişancı geç tepki verir; alarmda tehdit yönüne döner ve hızlı açar.
+## İsabet alınca mürettebat siper alır (birkaç saniye susar, namlu iner).
 
 const RANGE := 3000.0
 const MUZZLE := 950.0
@@ -9,10 +12,12 @@ const DAMAGE := 22.0
 
 var _yaw: Node3D
 var _pitch: Node3D
-var _burst := 0.0
-var _cool := 2.0
-var _shot_t := 0.0
-var _n := 0
+var _gun: GunMount
+var _target: Vessel
+var _los := false
+var _los_t := 0.0
+var _react := 0.0          ## hedef görüldükten sonra ilk atışa kalan süre
+var _quiet := 0.0          ## siper: susma süresi
 
 
 static func create_aaa(pos: Vector3, yaw: float) -> AaaGun:
@@ -49,6 +54,11 @@ static func create_aaa(pos: Vector3, yaw: float) -> AaaGun:
 		barrel.material_override = SamSite._mat(Color(0.15, 0.15, 0.14))
 		t._pitch.add_child(barrel)
 	t._turret = t._yaw
+	var muzzles: Array[Vector3] = [Vector3(-0.35, 0, -3.3), Vector3(0.35, 0, -3.3)]
+	t._gun = GunMount.new(t, t._yaw, t._pitch, muzzles)
+	t._gun.muzzle_speed = MUZZLE
+	t._gun.damage = DAMAGE
+	t._gun.add_flash(0.45)
 	t.position = pos
 	t.rotation.y = yaw
 	return t
@@ -57,43 +67,40 @@ static func create_aaa(pos: Vector3, yaw: float) -> AaaGun:
 func _physics_process(delta: float) -> void:
 	if destroyed:
 		return
-	_cool -= delta
+	_alert_tick(delta)
+	_quiet -= delta
 	var v := nearest_enemy_vessel(RANGE)
-	if v == null or not line_of_sight(v.com_global()):
-		_burst = 0.0
+	if v != _target:
+		_target = v
+		_los_t = 0.0
+		# sakin nişancı geç fark eder; alarmdaki hazır bekler
+		_react = randf_range(0.4, 0.9) if alerted() else randf_range(1.8, 3.2)
+	if v and _los_t <= 0.0:
+		_los_t = 0.25
+		_los = line_of_sight(v.com_global())
+	_los_t -= delta
+	if _quiet > 0.0:
+		# siperde: namlu aşağı, ateş yok
+		_gun.rest(delta, null, deg_to_rad(-3.0))
 		return
-	# öncül nişan: mermi uçuş süresi kadar ileri
-	var muzzle := _pitch.global_position
-	var tp := v.com_global()
-	var t := muzzle.distance_to(tp) / MUZZLE
-	for i in 2:
-		tp = v.com_global() + v.linear_velocity * t
-		t = muzzle.distance_to(tp) / MUZZLE
-	tp -= Planet.gravity_at(tp) * 0.5 * t * t
-	var local := to_local(tp)
-	_yaw.rotation.y = lerp_angle(_yaw.rotation.y, atan2(-local.x, -local.z), 1.0 - exp(-4.0 * delta))
-	var hd := Vector2(local.x, local.z).length()
-	_pitch.rotation.x = lerp_angle(_pitch.rotation.x, atan2(local.y - 1.7, hd), 1.0 - exp(-4.0 * delta))
-	if _burst <= 0.0 and _cool <= 0.0:
-		_burst = randf_range(1.0, 2.0)
-		_cool = _burst + randf_range(1.5, 3.0)
-	if _burst > 0.0:
-		_burst -= delta
-		_shot_t -= delta
-		while _shot_t <= 0.0:
-			_shot_t += 0.09
-			_shoot()
+	if v == null or not _los:
+		_gun.rest(delta, threat_point())
+		return
+	_react -= delta
+	_gun.engage(v, delta, _react <= 0.0)
 
 
-func _shoot() -> void:
-	if ProjectileManager.instance == null:
-		return
-	_n += 1
-	var dir := -_pitch.global_basis.z
-	var spread := deg_to_rad(0.7)
-	dir = dir.rotated(_pitch.global_basis.x, randf_range(-spread, spread)).rotated(_pitch.global_basis.y, randf_range(-spread, spread))
-	var side := _pitch.global_basis.x * (0.35 if _n % 2 == 0 else -0.35)
-	var p := _pitch.global_position + side + dir * 3.3
-	ProjectileManager.instance.spawn(p, dir * MUZZLE, DAMAGE, _n % 3 == 0, self)
-	if _n % 2 == 0:
-		Sfx.play_at("gun_stop.ogg", p, 2.0, randf_range(0.55, 0.65), 4000.0)
+func _on_hit(amount: float) -> void:
+	# mürettebat siper alır (her isabette değil; ağır isabette kesin)
+	if _quiet <= 0.0 and (amount > 60.0 or randf() < 0.35):
+		_quiet = randf_range(4.0, 8.0)
+		_react = randf_range(0.8, 1.5)
+
+
+## Testler için: atılan mermi sayısı / sessiz mi.
+func shots() -> int:
+	return _gun.shots
+
+
+func quiet() -> bool:
+	return _quiet > 0.0

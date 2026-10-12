@@ -1,0 +1,28 @@
+{
+	"name": "Çaylak Kanard-Delta",
+	"group": "Avcı",
+	"description": "Gripen tipi: kokpitin hemen arkasında tam hareketli kanardlar, kırık delta kanat (içte keskin, dışta yumuşak ok), yan alıklar. Kanard burnu kaldırmaya yardım eder: çevik ve kısa mesafede kalkar.",
+	"paint": {"scheme": "gri", "number": "39"},
+	"parts": [
+		{"part": "radar_nose",     "pos": [0, 0, -7.4]},
+		{"part": "cockpit_mk1",    "pos": [0, 0, -5.0]},
+		{"part": "tank_long",      "pos": [0, 0, -1.5]},
+		{"part": "jet_engine",     "pos": [0, 0, 1.75]},
+		{"part": "intake_side",    "pos": [0.88, 0.1, -2.6], "mirror": true},
+
+		{"part": "canard",         "pos": [1.35, 0.3, -3.6], "mirror": true},
+		{"part": "wing_custom",    "pos": [3.05, -0.2, -0.97], "rot": [1, 0, 0], "mirror": true,
+			"wing": {"span": 4.8, "root": 6.5, "tip": 0.6, "sweep": 40.0, "thick": 0.045, "crank": 0.35, "crank_sweep": 62.0}},
+		{"part": "elevon",         "pos": [1.6, -0.2, 2.65], "mirror": true},
+		{"part": "elevon",         "pos": [3.3, -0.2, 2.6], "mirror": true},
+		{"part": "wingtip_rail",   "pos": [5.57, -0.2, 1.9], "mirror": true},
+		{"part": "gun_pod",        "pos": [0.72, -0.35, -3.0]},
+		{"part": "flare_pod",      "pos": [0, -0.78, 0.6]},
+
+		{"part": "fin_vertical",   "pos": [0, 1.8, 1.8], "rot": [0, 0, 90]},
+		{"part": "rudder",         "pos": [0, 1.6, 3.15], "rot": [0, 0, 90]},
+
+		{"part": "gear_nose",      "pos": [0, -0.6, -5.6]},
+		{"part": "gear_main",      "pos": [1.4, -0.6, -0.6], "mirror": true}
+	]
+}

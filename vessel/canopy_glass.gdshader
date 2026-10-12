@@ -32,8 +32,13 @@ void fragment() {
 		ROUGHNESS = 0.015;
 		METALLIC = 0.0;
 		SPECULAR = 1.0;
-		// içeriden bakınca daha şeffaf
-		float base = FRONT_FACING ? 0.10 : 0.04;
-		ALPHA = mix(base, 0.75, fresnel);
+		// içeriden bakınca çok daha şeffaf: aşağı (yayın diplerine) bakarken yansıma kokpiti
+		// gri bir perdeyle örtüyordu. Dışarıdan bakınca tam yansıma kalır.
+		if (FRONT_FACING) {
+			ALPHA = mix(0.10, 0.75, fresnel);
+		} else {
+			ALPHA = mix(0.02, 0.12, fresnel);
+			SPECULAR = 0.35;
+		}
 	}
 }

@@ -69,6 +69,14 @@ const WEAPON_GUN := 0
 const WEAPON_MISSILE := 1
 const WEAPON_BOMB := 2
 const WEAPON_CARGO := 3
+const WEAPON_RADAR := 4
+const WEAPON_LGB := 5
+## Silah kartlarının ve V ile dönüşün sırası
+const WEAPON_ORDER := [WEAPON_GUN, WEAPON_MISSILE, WEAPON_RADAR, WEAPON_BOMB, WEAPON_LGB, WEAPON_CARGO]
+## Radar yayını (kapalıyken düşman RWR'ı seni görmez; IRST pasif çalışmaya devam eder)
+var radar_on := true
+## Karşı tedbir otomatik programı (füze 4 km'ye girince flare / chaff kendiliğinden)
+var cm_auto := false
 ## Ateş tetiği (oyuncu/AI yazar)
 var ctrl_fire := false
 ## Kokpitteki otopilot düğmesi
@@ -125,6 +133,7 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	_age += delta
 	update_hydraulics(delta)
+	_update_fuel_dump(delta)
 	if parts.is_empty():
 		freeze = true   # tüm parçalar koptu: boş gövde artık bir şey değil
 		return
@@ -269,6 +278,11 @@ func _spawn_debris(group: Array[Part]) -> void:
 	# kopan parça uçağın içinden ayrılır: aralarında çarpışma olmasın (zincirleme hasar yapmasın)
 	d.add_collision_exception_with(self)
 	add_collision_exception_with(d)
+	# kopma yüzleri: kalan komşularla birleşim yerine yırtık metal kapak + kıvılcım + duman
+	for part in group:
+		for q: Part in _neighbors.get(part, []):
+			if q in parts and not q in group:
+				DamageFx.tear(part, q)
 	var total := 0.0
 	var moment := Vector3.ZERO
 	for part in group:
@@ -457,6 +471,66 @@ func fuel_capacity() -> float:
 	return total
 
 
+## Yakıt boşaltma (acil iniş için ağırlık atma): kanat uçlarından buhar, yedek yakıtta durur.
+var fuel_dumping := false
+var _dump_trails: Array[PuffTrail] = []
+const DUMP_RESERVE := 0.12        ## kapasitenin bu kadarı tankta kalır
+
+
+func dump_rate() -> float:
+	return maxf(15.0, fuel_capacity() / 80.0)   # kg/s: dolu tank ~1.5 dakikada boşalır
+
+
+func can_dump_fuel() -> bool:
+	return fuel_amount() > fuel_capacity() * DUMP_RESERVE + 1.0
+
+
+func set_fuel_dump(on: bool) -> void:
+	if on and not can_dump_fuel():
+		system_message.emit("Yakıt boşaltılamaz: yedek seviyede")
+		return
+	fuel_dumping = on
+	system_message.emit("YAKIT BOŞALTILIYOR" if on else "Yakıt boşaltma durdu")
+	if on and _dump_trails.is_empty():
+		# en dıştaki kanat parçalarının uçlarından
+		for side in [-1.0, 1.0]:
+			var best: Part = null
+			for p in parts:
+				if signf(p.position.x) != side or not _is_main_wing(p):
+					continue
+				if best == null or absf(p.position.x) + p.size.x * 0.5 > absf(best.position.x) + best.size.x * 0.5:
+					best = p
+			if best:
+				_dump_trails.append(PuffTrail.create(best, Vector3(side * best.size.x * 0.42, 0, best.size.z * 0.3), "dump"))
+		if _dump_trails.is_empty():
+			_dump_trails.append(PuffTrail.create(self, Vector3(0, -0.3, 4.0), "dump"))
+	for t in _dump_trails:
+		if is_instance_valid(t):
+			t.emitting = on
+
+
+func _is_main_wing(p: Part) -> bool:
+	var wing := false
+	for m in p.modules:
+		if m is ControlSurfaceModule:
+			return false
+		if m is WingModule:
+			wing = true
+	return wing
+
+
+func _update_fuel_dump(delta: float) -> void:
+	if not fuel_dumping:
+		return
+	var keep := fuel_capacity() * DUMP_RESERVE
+	var amount := minf(dump_rate() * delta, fuel_amount() - keep)
+	if amount <= 0.0:
+		set_fuel_dump(false)
+		system_message.emit("Yakıt boşaltma bitti — yedek yakıt kaldı")
+		return
+	draw_fuel(amount)
+
+
 ## Tanklardan orantılı yakıt çeker; çekilebilen miktarı döner.
 func draw_fuel(amount: float) -> float:
 	var available := fuel_amount()
@@ -625,29 +699,41 @@ func auto_start() -> void:
 ## Işın isabetindeki şekil indeksinden parçayı bul.
 ## Fare ışını (dünya uzayı, from→to) ile parça seçimi: çarpışma şekilleri + çarpışma şekli
 ## olmayan parçaların (iniş takımı) görsel mesh kutuları. Hangar ve parça pencereleri için.
+## Işının değdiği parça: görsel üçgenlere göre (çarpışma şekilleri kaba ve birbirine taşar —
+## kanada tıklayınca gövde seçilmesin). Önce kutu (AABB) elemesi, sonra üçgen kesişimi.
+static var _faces_cache := {}
+
+
 func pick_part(from: Vector3, to: Vector3) -> Part:
 	var best: Part = null
 	var best_d := INF
-	var q := PhysicsRayQueryParameters3D.create(from, to, collision_layer)
-	var res := get_world_3d().direct_space_state.intersect_ray(q)
-	if not res.is_empty() and res.collider == self:
-		best = part_for_shape(res.shape)
-		best_d = from.distance_to(res.position)
 	for p in parts:
-		if not p.colliders.is_empty():
-			continue
 		for n in p.find_children("*", "MeshInstance3D", true, false):
 			var mi := n as MeshInstance3D
-			if mi.mesh == null or not mi.is_visible_in_tree() or (mi.material_override is ShaderMaterial and not mi.material_override.has_meta("paint")):
+			if mi.mesh == null or not mi.is_visible_in_tree():
 				continue
+			var mo := mi.material_override
+			if mo is ShaderMaterial and not mo.has_meta("paint") and mo != VesselBuilder.cockpit_panel_material():
+				continue        # alev, ısı dalgası, cam gibi saydam efektler
 			var inv := mi.global_transform.affine_inverse()
-			var hit: Variant = mi.get_aabb().intersects_segment(inv * from, inv * to)
-			if hit == null:
+			var lf: Vector3 = inv * from
+			var lt: Vector3 = inv * to
+			if mi.get_aabb().grow(0.02).intersects_segment(lf, lt) == null:
 				continue
-			var d := from.distance_to(mi.global_transform * (hit as Vector3))
-			if d < best_d:
-				best_d = d
-				best = p
+			var faces: PackedVector3Array = _faces_cache.get(mi.mesh, PackedVector3Array())
+			if faces.is_empty():
+				faces = mi.mesh.get_faces()
+				_faces_cache[mi.mesh] = faces
+			var dir := lt - lf
+			var i := 0
+			while i + 2 < faces.size():
+				var hit: Variant = Geometry3D.segment_intersects_triangle(lf, lt, faces[i], faces[i + 1], faces[i + 2])
+				if hit != null:
+					var d := from.distance_to(mi.global_transform * (hit as Vector3))
+					if d < best_d:
+						best_d = d
+						best = p
+				i += 3
 	return best
 
 
@@ -667,6 +753,23 @@ func heat_signature() -> float:
 		if e.is_running():
 			h += (0.25 + 0.5 * e.throttle + 0.8 * e.afterburner) * (0.45 if e.prop else 1.0)
 	return h
+
+
+## Radar kesit alanı çarpanı (Detection): gövde büyüklüğü (parça sayısı) + dış yükler (her
+## dolu füze / bomba rayı, pod, harici tank) + açık bomba kapakları. 1 ≈ Kartal-1 temiz.
+func rcs() -> float:
+	var r := clampf(float(parts.size()) / 16.0, 0.35, 2.5)
+	for m in modules:
+		if (m is MissileModule or m is BombModule) and m.loaded:
+			r += 0.05
+		elif m is EcmModule or m is TargetingPodModule:
+			r += 0.05
+		elif m is BombBayModule:
+			r += 0.45 * m.doors
+	for p in parts:
+		if p.def.get("category", "") == "harici":
+			r += 0.05
+	return r
 
 
 ## Isı kaynağının konumu (motor lülesi), yoksa ağırlık merkezi.
@@ -692,14 +795,14 @@ func available_weapons() -> Array[int]:
 		if m is GunModule:
 			kind = WEAPON_GUN
 		elif m is MissileModule:
-			kind = WEAPON_MISSILE
+			kind = m.weapon_kind()
 		elif m is BombModule:
-			kind = WEAPON_BOMB
+			kind = m.weapon_kind()
 		elif m is CargoModule:
 			kind = WEAPON_CARGO
 		if kind >= 0 and not kind in out:
 			out.append(kind)
-	out.sort()
+	out.sort_custom(func(a: int, b: int) -> bool: return WEAPON_ORDER.find(a) < WEAPON_ORDER.find(b))
 	return out
 
 
@@ -712,12 +815,62 @@ func cycle_weapon() -> void:
 	selected_weapon = list[(i + 1) % list.size()]
 
 
-func bombs_left() -> int:
+## Dolu güdümsüz bomba askıları (guided=true: lazer güdümlü).
+func bombs_left(guided := false) -> int:
 	var n := 0
 	for m in modules:
-		if m is BombModule and m.loaded:
+		if m is BombModule and m.loaded and m.guided == guided:
 			n += 1
 	return n
+
+
+func targeting_pod() -> TargetingPodModule:
+	for m in modules:
+		if m is TargetingPodModule:
+			return m
+	return null
+
+
+func irst() -> IrstModule:
+	for m in modules:
+		if m is IrstModule:
+			return m
+	return null
+
+
+func probe() -> RefuelProbeModule:
+	for m in modules:
+		if m is RefuelProbeModule:
+			return m
+	return null
+
+
+## Çalışan bir ECM podu var mı (düşman radarlarını karıştırıyor).
+func jamming() -> bool:
+	for m in modules:
+		if m is EcmModule and m.active():
+			return true
+	return false
+
+
+## Radar (açıksa) ve IRST temasları birlikte (hedef kutuları, hedef seçimi).
+func sensor_contacts() -> Array[Vessel]:
+	var out: Array[Vessel] = []
+	var r := radar()
+	if r:
+		out.append_array(r.contacts)
+	var ir := irst()
+	if ir:
+		for t in ir.contacts:
+			if not t in out:
+				out.append(t)
+	return out
+
+
+## Yalnız IRST'nin gördüğü (radarın görmediği) temas mı.
+func ir_only(t: Vessel) -> bool:
+	var r := radar()
+	return not (r != null and t in r.contacts)
 
 
 func cargo_left() -> int:
@@ -764,6 +917,30 @@ func flares_left() -> int:
 	return n
 
 
+func chaff_left() -> int:
+	var n := 0
+	for m in modules:
+		if m is FlareModule:
+			n += m.chaff
+	return n
+
+
+## Chaff hazneli fişeklik var mı (panel kartı için).
+func has_chaff() -> bool:
+	for m in modules:
+		if m is FlareModule and (m.chaff > 0 or m.part.def.get("chaff_capable", false)):
+			return true
+	return false
+
+
+## Bir chaff paketi at (ilk dolu hazneden).
+func drop_chaff() -> bool:
+	for m in modules:
+		if m is FlareModule and m.chaff > 0:
+			return m.fire_chaff()
+	return false
+
+
 ## Bir çift ısı tuzağı at (ilk dolu fişeklikten).
 func drop_flares() -> bool:
 	for m in modules:
@@ -794,7 +971,7 @@ func radar() -> RadarModule:
 
 ## Seçili silah türünün adı (HUD için).
 func weapon_name() -> String:
-	return ["TOP", "IR FÜZE", "BOMBA", "KARGO"][clampi(selected_weapon, 0, 3)]
+	return ["TOP", "IR FÜZE", "BOMBA", "KARGO", "RADAR FÜZE", "LAZER BOMBA"][clampi(selected_weapon, 0, 5)]
 
 
 func gun_ammo() -> int:
@@ -805,12 +982,17 @@ func gun_ammo() -> int:
 	return n
 
 
-func missiles_left() -> int:
+## Dolu IR füze rayları (radar=true: radar füzeleri).
+func missiles_left(radar_guided := false) -> int:
 	var n := 0
 	for m in modules:
-		if m is MissileModule and m.loaded:
+		if m is MissileModule and m.loaded and m.radar_guided == radar_guided:
 			n += 1
 	return n
+
+
+func radar_missiles_left() -> int:
+	return missiles_left(true)
 
 
 # ------------------------------------------------------------------ kısmi arızalar

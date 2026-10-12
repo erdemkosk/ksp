@@ -40,6 +40,7 @@ var _hover_part: Part
 var _hover_mat: StandardMaterial3D
 var _hover_label: Label
 var _place_label: Label
+var _help_panel: Control
 var _rmb_pos := Vector2.ZERO
 var _rmb_click := false
 var _nodes: Array[Dictionary] = []      # boştaki bağlantı noktaları {pos, dir, part}
@@ -202,15 +203,31 @@ func _build_environment() -> void:
 	env.ssao_intensity = 1.6
 	env.glow_enabled = true
 	env.glow_intensity = 0.3
+	env.ssr_enabled = true            # cilalı zeminde uçağın yansıması
+	env.ssr_max_steps = 48
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
 
+	# güneş açık kapıdan (-z) içeri vurur: zeminde uzun bir ışık lekesi
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-62, 30, 0)
-	sun.light_energy = 0.55
+	sun.rotation_degrees = Vector3(-24, 200, 0)
+	sun.light_energy = 1.6
+	sun.light_color = Color(1.0, 0.93, 0.82)
 	sun.shadow_enabled = true
+	sun.directional_shadow_max_distance = 120.0
 	add_child(sun)
+	# uçağa tavandan bakan spotlar (sıcak/soğuk)
+	for sp in [[Vector3(-13, 19, 12), Color(1.0, 0.9, 0.78), true], [Vector3(14, 19, -6), Color(0.85, 0.92, 1.0), false]]:
+		var spot := SpotLight3D.new()
+		spot.position = sp[0]
+		spot.light_color = sp[1]
+		spot.light_energy = 9.0
+		spot.spot_range = 45.0
+		spot.spot_angle = 28.0
+		spot.shadow_enabled = sp[2]
+		add_child(spot)
+		spot.look_at(Vector3(0, 1.5, 0), Vector3.UP)
 	for x in [-14.0, 14.0]:
 		for z in [-12.0, 10.0]:
 			var l := OmniLight3D.new()
@@ -220,14 +237,21 @@ func _build_environment() -> void:
 			l.light_color = Color(1.0, 0.96, 0.9)
 			add_child(l)
 
-	# zemin, işaret çizgileri, duvarlar, tavan lambaları
-	_box(Vector3(70, 0.2, 70), Vector3(0, -0.1, 0), Color(0.42, 0.43, 0.44), 0.85)
+	# zemin (cilalı epoksi: hafif yansır), işaret çizgileri, duvarlar, tavan lambaları
+	_box(Vector3(70, 0.2, 70), Vector3(0, -0.1, 0), Color(0.36, 0.37, 0.38), 0.3)
+	for i in range(1, 12):
+		var k := -35.0 + i * 5.83
+		_box(Vector3(70, 0.01, 0.04), Vector3(0, 0.002, k), Color(0.24, 0.25, 0.26), 0.9)
+		_box(Vector3(0.04, 0.01, 70), Vector3(k, 0.002, 0), Color(0.24, 0.25, 0.26), 0.9)
 	for i in 9:
 		var z := -24.0 + i * 6.0
 		_box(Vector3(0.25, 0.02, 3.0), Vector3(0, 0.01, z), Color(0.95, 0.75, 0.1), 0.6)
 	_box(Vector3(30, 0.02, 0.3), Vector3(0, 0.01, -27), Color(0.95, 0.75, 0.1), 0.6)
 	_box(Vector3(30, 0.02, 0.3), Vector3(0, 0.01, 27), Color(0.95, 0.75, 0.1), 0.6)
-	_box(Vector3(70, 22, 0.5), Vector3(0, 11, -35), Color(0.32, 0.35, 0.38), 0.7)
+	# arka duvar (-z): ortada 30 × 14 m açık kapı
+	_box(Vector3(20, 22, 0.5), Vector3(-25, 11, -35), Color(0.32, 0.35, 0.38), 0.7)
+	_box(Vector3(20, 22, 0.5), Vector3(25, 11, -35), Color(0.32, 0.35, 0.38), 0.7)
+	_box(Vector3(30, 8, 0.5), Vector3(0, 18, -35), Color(0.32, 0.35, 0.38), 0.7)
 	_box(Vector3(0.5, 22, 70), Vector3(-35, 11, 0), Color(0.36, 0.38, 0.4), 0.7)
 	_box(Vector3(0.5, 22, 70), Vector3(35, 11, 0), Color(0.36, 0.38, 0.4), 0.7)
 	_box(Vector3(70, 22, 0.5), Vector3(0, 11, 35), Color(0.25, 0.27, 0.29), 0.6)   # kapı
@@ -247,19 +271,232 @@ func _build_environment() -> void:
 			lamp.material_override = mat
 			lamp.position = Vector3(x, 21.7, z)
 			add_child(lamp)
+	_build_outside()
+	_build_structure()
+	_build_props()
 
 
-func _box(size: Vector3, pos: Vector3, color: Color, roughness: float) -> void:
+## Kapının dışı: güneşli apron, çimen, uzak tepeler ve gökyüzü (ışıksız düzlemler).
+func _build_outside() -> void:
+	_box(Vector3(120, 0.2, 70), Vector3(0, -0.12, -70), Color(0.55, 0.55, 0.53), 0.9)          # apron
+	_box(Vector3(160, 0.2, 60), Vector3(0, -0.14, -130), Color(0.33, 0.42, 0.22), 1.0)          # çimen
+	_box(Vector3(0.4, 0.02, 60), Vector3(0, 0.0, -66), Color(0.95, 0.75, 0.1), 0.6)             # taksi çizgisi
+	_backdrop(Vector3(400, 0.1, 160), Vector3(0, 70, -180), Color(0.58, 0.72, 0.9), Vector3(90, 0, 0))   # gök
+	_backdrop(Vector3(400, 0.1, 30), Vector3(0, 6, -175), Color(0.36, 0.45, 0.42), Vector3(90, 0, 0))    # tepeler
+	# yarı açık sürgülü kapı kanatları (duvarın dışında)
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(9, 14, 0.4), Vector3(sx * 19.5, 7, -35.6), Color(0.27, 0.3, 0.33), 0.6)
+		for k in 5:
+			_box(Vector3(9, 0.15, 0.1), Vector3(sx * 19.5, 1.5 + k * 2.8, -35.85), Color(0.2, 0.22, 0.24), 0.5)
+	_box(Vector3(32, 0.4, 0.6), Vector3(0, 14.2, -35.2), Color(0.85, 0.7, 0.1), 0.6)          # kapı rayı
+
+
+## Çelik iskelet: duvar kolonları, çatı makasları, köprülü vinç.
+func _build_structure() -> void:
+	var steel := Color(0.26, 0.3, 0.36)
+	for i in 8:
+		var k := -30.0 + i * 8.57
+		_box(Vector3(0.7, 22, 0.9), Vector3(34.4, 11, k), steel, 0.5)
+		_box(Vector3(0.7, 22, 0.9), Vector3(-34.4, 11, k), steel, 0.5)
+		_box(Vector3(70, 0.9, 0.5), Vector3(0, 20.8, k), steel, 0.5)            # makas alt başlığı
+		for j in 6:
+			var x := -30.0 + j * 12.0
+			_box(Vector3(0.18, 2.4, 0.18), Vector3(x, 20.0, k), steel, 0.5, Vector3(0, 0, 35 if j % 2 else -35))
+	# yan duvarlarda sarı-siyah tampon şeridi
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(0.1, 0.9, 70), Vector3(sx * 34.7, 0.45, 0), Color(0.9, 0.72, 0.08), 0.6)
+	# köprülü vinç: yan raylar, sarı köprü, araba ve sarkan kanca
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(0.6, 0.8, 70), Vector3(sx * 33.5, 17.0, 0), steel, 0.5)
+	_box(Vector3(67, 1.2, 1.0), Vector3(0, 17.6, -14), Color(0.92, 0.7, 0.08), 0.55)
+	_box(Vector3(2.0, 1.0, 2.0), Vector3(-8, 16.6, -14), Color(0.3, 0.3, 0.32), 0.5)
+	_cyl(0.03, 8.0, Vector3(-8, 12.0, -14), Color(0.15, 0.15, 0.15), 0.4)
+	_box(Vector3(0.6, 0.5, 0.3), Vector3(-8, 7.8, -14), Color(0.9, 0.2, 0.1), 0.5)
+	# duvarda tabela
+	var plate := Label3D.new()
+	plate.text = "HANGAR 1"
+	plate.font_size = 220
+	plate.pixel_size = 0.01
+	plate.modulate = Color(0.92, 0.94, 0.96)
+	plate.outline_size = 0
+	plate.shaded = true
+	plate.position = Vector3(34.0, 13.0, 8.6)
+	plate.rotation_degrees = Vector3(0, -90, 0)
+	add_child(plate)
+
+
+## Kenarlardaki teçhizat (uçağın kurulduğu orta alandan uzak).
+func _build_props() -> void:
+	var red := Color(0.72, 0.1, 0.08)
+	# takım dolapları (çekmece çizgili) ve tezgâh: +x duvarı
+	for z in [-14.0, -11.4]:
+		_box(Vector3(1.3, 1.1, 2.4), Vector3(32.8, 0.55, z), red, 0.4)
+		for k in 4:
+			_box(Vector3(0.02, 0.03, 2.2), Vector3(32.14, 0.25 + k * 0.24, z), Color(0.12, 0.12, 0.12), 0.5)
+		_box(Vector3(1.0, 0.9, 2.2), Vector3(32.9, 1.55, z), red.darkened(0.15), 0.4)
+	_box(Vector3(1.4, 0.08, 5.0), Vector3(32.6, 0.95, -0.5), Color(0.45, 0.32, 0.2), 0.8)
+	for dz in [-2.3, 2.3]:
+		for dx in [-0.55, 0.55]:
+			_box(Vector3(0.08, 0.92, 0.08), Vector3(32.6 + dx, 0.46, -0.5 + dz), Color(0.2, 0.2, 0.22), 0.5)
+	_box(Vector3(0.05, 1.6, 4.6), Vector3(34.0, 1.9, -0.5), Color(0.55, 0.57, 0.58), 0.6)      # alet panosu
+	# gaz tüpleri
+	for i in 5:
+		_cyl(0.16, 1.5, Vector3(33.4 - (i % 2) * 0.4, 0.75, 6.0 + i * 0.38), [Color(0.2, 0.45, 0.25), Color(0.6, 0.62, 0.65)][i % 2], 0.35, 0.4)
+	# yangın tüpleri (duvar dibinde)
+	for z in [-24.0, 12.0, 26.0]:
+		_cyl(0.13, 0.6, Vector3(34.3, 0.3, z), Color(0.85, 0.08, 0.05), 0.35)
+	# varil yığını: -x köşesi
+	for i in 7:
+		var p := Vector3(-31.5 + (i % 4) * 0.72, 0.45, -28.0 + floorf(i / 4.0) * 0.75)
+		_cyl(0.32, 0.9, p, Color(0.12, 0.28, 0.55), 0.5, 0.2)
+	# çekici (tug): sarı gövde, kabin, tekerlekler
+	var tug := Vector3(-24.0, 0.0, 16.0)
+	_box(Vector3(2.2, 0.8, 3.4), tug + Vector3(0, 0.75, 0), Color(0.9, 0.68, 0.08), 0.5)
+	_box(Vector3(1.6, 0.9, 1.2), tug + Vector3(0, 1.6, 0.9), Color(0.85, 0.63, 0.07), 0.5)
+	_box(Vector3(1.5, 0.7, 0.05), tug + Vector3(0, 1.65, 0.28), Color(0.15, 0.2, 0.25), 0.1)
+	for dx in [-1.05, 1.05]:
+		for dz in [-1.1, 1.1]:
+			_cyl(0.4, 0.35, tug + Vector3(dx, 0.4, dz), Color(0.06, 0.06, 0.06), 0.9, 0.0, Vector3(0, 0, 90))
+	_box(Vector3(0.15, 0.15, 2.6), tug + Vector3(0, 0.5, -2.9), Color(0.25, 0.25, 0.27), 0.5)   # çeki demiri
+	# bakım merdiveni (sarı): -x tarafında
+	var st := Vector3(-16.0, 0.0, -6.0)
+	for sx in [-0.45, 0.45]:
+		_box(Vector3(0.08, 3.4, 0.08), st + Vector3(sx, 1.7, -0.9), Color(0.9, 0.7, 0.08), 0.5, Vector3(-22, 0, 0))
+	for k in 7:
+		_box(Vector3(0.9, 0.05, 0.3), st + Vector3(0, 0.35 + k * 0.42, -0.25 - k * 0.17), Color(0.5, 0.5, 0.52), 0.5)
+	_box(Vector3(1.0, 0.06, 1.0), st + Vector3(0, 3.2, -1.7), Color(0.5, 0.5, 0.52), 0.5)
+	for dx in [-0.45, 0.45]:
+		for dz in [0.0, -2.2]:
+			_box(Vector3(0.08, 3.2, 0.08), st + Vector3(dx, 1.6, dz), Color(0.9, 0.7, 0.08), 0.5)
+	# tekerlekli takoz ve emniyet konileri
+	for p in [Vector3(-8, 0, 22), Vector3(9, 0, 23), Vector3(-26, 0, -12)]:
+		_cone(p)
+
+
+func _box(size: Vector3, pos: Vector3, color: Color, roughness: float, rot := Vector3.ZERO) -> void:
+	var mi := MeshInstance3D.new()
+	var m := BoxMesh.new()
+	m.size = size
+	mi.mesh = m
+	mi.material_override = _std_mat(color, roughness)
+	mi.position = pos
+	mi.rotation_degrees = rot
+	add_child(mi)
+
+
+func _cyl(r: float, h: float, pos: Vector3, color: Color, roughness: float, metallic := 0.0, rot := Vector3.ZERO) -> void:
+	var mi := MeshInstance3D.new()
+	var m := CylinderMesh.new()
+	m.top_radius = r
+	m.bottom_radius = r
+	m.height = h
+	m.radial_segments = 20
+	mi.mesh = m
+	var mat := _std_mat(color, roughness)
+	mat.metallic = metallic
+	mi.material_override = mat
+	mi.position = pos
+	mi.rotation_degrees = rot
+	add_child(mi)
+
+
+## Işıktan etkilenmeyen düzlem (dış manzara).
+func _backdrop(size: Vector3, pos: Vector3, color: Color, rot: Vector3) -> void:
 	var mi := MeshInstance3D.new()
 	var m := BoxMesh.new()
 	m.size = size
 	mi.mesh = m
 	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = color
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.position = pos
+	mi.rotation_degrees = rot
+	add_child(mi)
+
+
+func _cone(p: Vector3) -> void:
+	var mi := MeshInstance3D.new()
+	var m := CylinderMesh.new()
+	m.top_radius = 0.04
+	m.bottom_radius = 0.2
+	m.height = 0.7
+	mi.mesh = m
+	mi.material_override = _std_mat(Color(1.0, 0.4, 0.05), 0.6)
+	mi.position = p + Vector3(0, 0.35, 0)
+	add_child(mi)
+	_box(Vector3(0.42, 0.06, 0.42), p + Vector3(0, 0.03, 0), Color(0.1, 0.1, 0.1), 0.8)
+	_cyl(0.105, 0.1, p + Vector3(0, 0.45, 0), Color(0.95, 0.95, 0.95), 0.6)   # yansıtıcı bant
+
+
+const HELP_KEYS := [
+	["YERLEŞTİRME", ""],
+	["Sol tık", "parçayı yerleştir · takılı parçayı tutup taşı"],
+	["Shift + sol tık", "yerleştir, seçim elde kalsın"],
+	["Sağ tık", "parça penceresi (bilgi, boyut, kopyala, sil)"],
+	["Del", "fare altındaki parçayı sil"],
+	["X", "simetri aç / kapat"],
+	["Yön tuşları · PgUp/PgDn", "fare altındaki parçayı ince kaydır (Shift: 25 cm)"],
+	["DÖNDÜRME VE BOYUT", ""],
+	["W/S · A/D · Q/E", "burun · sapma · yatış ekseninde döndür"],
+	["C · Boşluk", "açı adımını değiştir · dönüşü sıfırla"],
+	["Shift + tekerlek · [ ]", "gövde, motor, kanat boyutu (0.5×–2×)"],
+	["KAMERA VE DOSYA", ""],
+	["Sağ sürükle · orta sürükle", "kamerayı döndür · kaydır"],
+	["Tekerlek · F", "yakınlaş · uçağı ortala"],
+	["Ctrl+Z · Ctrl+Y", "geri al · yinele"],
+	["Ctrl+S", "kaydet"],
+]
+
+
+## F1: tüm hangar kısayolları (sabit alt yazı yerine).
+func _build_help(root: Control) -> void:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _flat(Color(0.05, 0.07, 0.09, 0.95), 10))
+	panel.set_anchors_preset(Control.PRESET_CENTER)
+	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	panel.visible = false
+	root.add_child(panel)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	panel.add_child(box)
+	var title := Label.new()
+	title.text = "HANGAR KISAYOLLARI"
+	title.add_theme_font_size_override("font_size", 18)
+	title.add_theme_color_override("font_color", Color(0.45, 1.0, 0.65))
+	box.add_child(title)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 22)
+	grid.add_theme_constant_override("v_separation", 5)
+	box.add_child(grid)
+	for row in HELP_KEYS:
+		var k := Label.new()
+		k.text = row[0]
+		var section: bool = row[1] == ""
+		k.add_theme_font_size_override("font_size", 12 if section else 14)
+		k.add_theme_color_override("font_color", Color(0.55, 0.62, 0.68) if section else Color(1.0, 0.85, 0.45))
+		grid.add_child(k)
+		var v := Label.new()
+		v.text = row[1]
+		v.add_theme_font_size_override("font_size", 14)
+		v.add_theme_color_override("font_color", Color(0.85, 0.88, 0.92))
+		grid.add_child(v)
+	var close := Label.new()
+	close.text = "F1 ile kapat"
+	close.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	close.add_theme_color_override("font_color", Color(0.55, 0.62, 0.68))
+	box.add_child(close)
+	_help_panel = panel
+
+
+func _std_mat(color: Color, roughness: float) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color
 	mat.roughness = roughness
-	mi.material_override = mat
-	mi.position = pos
-	add_child(mi)
+	return mat
 
 
 func _build_markers() -> void:
@@ -330,7 +567,7 @@ func _open_part_panel(part: Part) -> void:
 	var idx: int = _part_entry[part]
 	var entry: Dictionary = craft["parts"][idx]
 	var sc: float = entry.get("scale", 1.0)
-	var def := VesselBuilder.scaled_def(PartLibrary.get_def(entry["part"]), sc)
+	var def: Dictionary = part.def      # kurulmuş tanım: ölçek, esneme ve kanat biçimi dahil
 	_panel_index = idx
 	var w := UiWindow.create(String(def.get("title", "")).to_upper(), _theme)
 	w.custom_minimum_size.x = 260
@@ -362,6 +599,10 @@ func _open_part_panel(part: Part) -> void:
 		minus.pressed.connect(func() -> void: _rescale_entry(idx, -1))
 		plus.pressed.connect(func() -> void: _rescale_entry(idx, 1))
 		w.body.add_child(row)
+	if def.get("procedural", "") == "wing":
+		_wing_editor(w.body, idx, entry)
+	if def.get("category", "") in VesselBuilder.STRETCHABLE:
+		_stretch_editor(w.body, idx, entry)
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 6)
 	for spec in [["Taşı", func() -> void: _pick_up_entry(idx)],
@@ -387,6 +628,185 @@ func _open_part_panel(part: Part) -> void:
 	w.position = (_mouse() + Vector2(24, -30)).clamp(Vector2(310, 64), vp - Vector2(290, 230))
 	_part_panel = w
 	Sfx.click()
+
+
+# ------------------------------------------------------------------ biçim düzenleyicileri
+
+## Kaydı değiştir, uçağı yeniden kur ve aynı parçanın penceresini tekrar aç.
+func _commit_entry(idx: int, change: Callable) -> void:
+	if idx < 0 or idx >= (craft["parts"] as Array).size():
+		return
+	_push_undo()
+	change.call(craft["parts"][idx])
+	Sfx.play_ui("switch_2.ogg", -12.0, 1.1)
+	_rebuild()
+	for p in _part_entry:
+		if _part_entry[p] == idx:
+			_open_part_panel(p)
+			return
+
+
+## Etiketli kaydırıcı. Sürüklerken yalnız değer yazısı değişir; bırakınca (ya da tıklama /
+## tekerlekten 0.35 sn sonra) on_commit(değer) çağrılır.
+func _slider(parent: Control, title: String, lo: float, hi: float, step: float, value: float, fmt: String, on_commit: Callable) -> void:
+	var row := HBoxContainer.new()
+	var l := Label.new()
+	l.text = title
+	l.custom_minimum_size.x = 92
+	l.add_theme_font_size_override("font_size", 12)
+	row.add_child(l)
+	var s := HSlider.new()
+	s.min_value = lo
+	s.max_value = hi
+	s.step = step
+	s.value = value
+	s.custom_minimum_size.x = 120
+	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	s.focus_mode = Control.FOCUS_NONE
+	row.add_child(s)
+	var v := Label.new()
+	v.text = fmt % value
+	v.custom_minimum_size.x = 52
+	v.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	v.add_theme_font_size_override("font_size", 12)
+	row.add_child(v)
+	var timer := Timer.new()
+	timer.one_shot = true
+	timer.wait_time = 0.35
+	row.add_child(timer)
+	var state := {"drag": false}
+	s.drag_started.connect(func() -> void: state["drag"] = true)
+	s.drag_ended.connect(func(_changed: bool) -> void:
+		state["drag"] = false
+		on_commit.call_deferred(s.value))
+	s.value_changed.connect(func(x: float) -> void:
+		v.text = fmt % x
+		if not state["drag"]:
+			timer.start())
+	timer.timeout.connect(func() -> void: on_commit.call_deferred(s.value))
+	parent.add_child(row)
+
+
+func _section_label(parent: Control, text: String) -> void:
+	var l := Label.new()
+	l.text = text
+	l.add_theme_font_size_override("font_size", 12)
+	l.add_theme_color_override("font_color", Color(1.0, 0.82, 0.4))
+	parent.add_child(l)
+
+
+## Ayarlanabilir kanat: hazır biçimler + açıklık, veterler, ok açıları, kırılma, kalınlık, dihedral.
+## Açıklık değişince kök yerinde kalır (kanat gövdeden kopmaz).
+func _wing_editor(parent: Control, idx: int, entry: Dictionary) -> void:
+	var p: Dictionary = (entry.get("wing", PartLibrary.WING_PRESETS["Trapez"]) as Dictionary).duplicate()
+	_section_label(parent, "KANAT BİÇİMİ")
+	var grid := GridContainer.new()
+	grid.columns = 4
+	for shape_name in PartLibrary.WING_PRESETS:
+		var b := Button.new()
+		b.text = shape_name
+		b.focus_mode = Control.FOCUS_NONE
+		b.add_theme_font_size_override("font_size", 11)
+		b.pressed.connect(func() -> void: _set_wing(idx, (PartLibrary.WING_PRESETS[shape_name] as Dictionary).duplicate()))
+		grid.add_child(b)
+	parent.add_child(grid)
+	var specs := [
+		["Açıklık", "span", 1.0, 12.0, 0.1, "%.1f m"],
+		["Kök veteri", "root", 0.4, 9.0, 0.1, "%.1f m"],
+		["Uç veteri", "tip", 0.05, 6.0, 0.05, "%.2f m"],
+		["Ok açısı", "sweep", -40.0, 70.0, 1.0, "%+.0f°"],
+		["Kırılma", "crank", 0.0, 0.8, 0.05, "%.2f"],
+		["İç ok açısı", "crank_sweep", 0.0, 80.0, 1.0, "%.0f°"],
+		["Kalınlık", "thick", 0.03, 0.15, 0.005, "%.3f"],
+	]
+	for sp in specs:
+		var key: String = sp[1]
+		_slider(parent, sp[0], sp[2], sp[3], sp[4], float(p.get(key, 0.0)), sp[5], func(x: float) -> void:
+			var np := p.duplicate()
+			np[key] = x
+			_set_wing(idx, np))
+	# dihedral: yatay kanatta Z dönüşü
+	var rot := VesselBuilder._vec(entry.get("rot", [0, 0, 0]))
+	if absf(rot.z) < 45.0:
+		_slider(parent, "Dihedral", -20.0, 20.0, 1.0, rot.z, "%+.0f°", func(x: float) -> void:
+			_commit_entry(idx, func(e: Dictionary) -> void:
+				var r := VesselBuilder._vec(e.get("rot", [0, 0, 0]))
+				e["rot"] = [r.x, r.y, x]))
+	var info := Label.new()
+	var d := PartLibrary.custom_wing_def(p)
+	var wm: Dictionary = d["modules"][0]
+	info.text = "Alan %.1f m²  ·  en-boy %.1f  ·  stall %d°  ·  %d kg" % [wm["area"], wm["aspect_ratio"], wm["stall_deg"], d["mass"]]
+	info.add_theme_font_size_override("font_size", 12)
+	info.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9))
+	parent.add_child(info)
+
+
+## Yeni kanat biçimi: açıklık değişince parçayı kaydırarak kökü yerinde tut.
+func _set_wing(idx: int, np: Dictionary) -> void:
+	_commit_entry(idx, func(e: Dictionary) -> void:
+		var sc := float(e.get("scale", 1.0))
+		var old_w: float = (VesselBuilder.entry_def(e["part"], e, sc)["size"] as Vector3).x
+		e["wing"] = np
+		var new_w: float = (VesselBuilder.entry_def(e["part"], e, sc)["size"] as Vector3).x
+		var dir := Basis.from_euler(VesselBuilder._vec(e.get("rot", [0, 0, 0])) * (PI / 180.0)) * Vector3.RIGHT
+		if e.get("flip", false):
+			dir = -dir
+		var pos := VesselBuilder._vec(e["pos"]) + dir * (new_w - old_w) * 0.5
+		e["pos"] = [pos.x, pos.y, pos.z])
+
+
+## Gövde esnemesi: uzunluk, genişlik, yükseklik ve hazır kesitler. Uzayınca arkadaki parçalar
+## geriye, genişleyince yandakiler dışarı itilir (uçak bütün kalır, ön uç yerinde).
+func _stretch_editor(parent: Control, idx: int, entry: Dictionary) -> void:
+	var st := VesselBuilder._vec(entry.get("stretch", [1, 1, 1]))
+	_section_label(parent, "GÖVDE BİÇİMİ")
+	var row := HBoxContainer.new()
+	for spec in [["Yuvarlak", Vector2(1.0, 1.0)], ["Oval", Vector2(1.25, 0.8)], ["Yassı", Vector2(1.7, 0.55)], ["Dar-uzun", Vector2(0.8, 0.8)]]:
+		var b := Button.new()
+		b.text = spec[0]
+		b.focus_mode = Control.FOCUS_NONE
+		b.add_theme_font_size_override("font_size", 11)
+		var xy: Vector2 = spec[1]
+		b.pressed.connect(func() -> void: _set_stretch(idx, Vector3(xy.x, xy.y, st.z)))
+		row.add_child(b)
+	parent.add_child(row)
+	_slider(parent, "Uzunluk", 0.4, 3.0, 0.05, st.z, "×%.2f", func(x: float) -> void: _set_stretch(idx, Vector3(st.x, st.y, x)))
+	_slider(parent, "Genişlik", 0.4, 3.0, 0.05, st.x, "×%.2f", func(x: float) -> void: _set_stretch(idx, Vector3(x, st.y, st.z)))
+	_slider(parent, "Yükseklik", 0.4, 3.0, 0.05, st.y, "×%.2f", func(x: float) -> void: _set_stretch(idx, Vector3(st.x, x, st.z)))
+
+
+func _set_stretch(idx: int, ns: Vector3) -> void:
+	var parts: Array = craft["parts"]
+	var e: Dictionary = parts[idx]
+	var sc := float(e.get("scale", 1.0))
+	var old_size: Vector3 = VesselBuilder.entry_def(e["part"], e, sc)["size"]
+	var probe := e.duplicate(true)
+	probe["stretch"] = [ns.x, ns.y, ns.z]
+	var new_size: Vector3 = VesselBuilder.entry_def(e["part"], probe, sc)["size"]
+	var p0 := VesselBuilder._vec(e["pos"])
+	var front := p0.z - old_size.z * 0.5
+	var back := p0.z + old_size.z * 0.5
+	var dz := new_size.z - old_size.z
+	var dw := (new_size.x - old_size.x) * 0.5
+	var on_axis := absf(p0.x) < 0.3
+	_commit_entry(idx, func(en: Dictionary) -> void:
+		if ns.is_equal_approx(Vector3.ONE):
+			en.erase("stretch")
+		else:
+			en["stretch"] = [ns.x, ns.y, ns.z]
+		if not on_axis:
+			return
+		en["pos"] = [p0.x, p0.y, p0.z + dz * 0.5]
+		for i in parts.size():
+			if i == idx:
+				continue
+			var o: Dictionary = parts[i]
+			var q := VesselBuilder._vec(o.get("pos", [0, 0, 0]))
+			if q.z > p0.z + 0.01:
+				q.z += dz      # arkadakiler geriye
+			if absf(q.x) > 0.3 and q.z > front - 0.2 and q.z < back + 0.2:
+				q.x += signf(q.x) * dw     # yandakiler (kanat kökü, alık) dışarı
+			o["pos"] = [q.x, q.y, q.z])
 
 
 func _rescale_entry(idx: int, dir: int) -> void:
@@ -440,6 +860,8 @@ func _rest_on_floor() -> void:
 
 func _process(delta: float) -> void:
 	_time += delta
+	if is_instance_valid(_load_popup) and _load_popup.visible and is_instance_valid(_pv_root):
+		_pv_root.rotate_y(delta * 0.35)    # önizleme yavaşça döner
 	if not Game.args.has("hangartest"):
 		_update_camera()
 	_update_ghost()
@@ -519,6 +941,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.echo:
 			return
 		match event.physical_keycode:
+			KEY_F1:
+				_help_panel.visible = not _help_panel.visible
 			KEY_X:
 				symmetry = not symmetry
 				_sym_check.set_pressed_no_signal(symmetry)
@@ -675,7 +1099,9 @@ func _refresh_nodes() -> void:
 	_nodes.clear()
 	if _selected.is_empty() or not is_instance_valid(_preview):
 		return
-	if not PartLibrary.get_def(_selected).get("category", "") in AXIAL:
+	var sel_def := PartLibrary.get_def(_selected)
+	var pylon_mode := _pylon_load(sel_def)
+	if not _is_axial(sel_def) and not pylon_mode:
 		return
 	if _node_mat == null:
 		_node_mat = StandardMaterial3D.new()
@@ -684,32 +1110,72 @@ func _refresh_nodes() -> void:
 		_node_mat.albedo_color = Color(0.3, 1.0, 0.45, 0.8)
 		_node_mat.no_depth_test = true
 		_node_mat.render_priority = 5
+	if pylon_mode:
+		# silah / dış yük elde: boştaki askı noktalarının alt ucunda yeşil top
+		for p in _preview.parts:
+			if not p.def.get("pylon", false):
+				continue
+			var pos := p.position - p.basis.y.normalized() * p.size.y * 0.5
+			if _pylon_occupied(p, pos):
+				continue
+			_add_node(pos, -p.basis.y.normalized(), p)
+		return
 	var axial: Array[Part] = []
 	for p in _preview.parts:
-		if p.def.get("category", "") in AXIAL:
+		if _is_axial(p.def):
 			axial.append(p)
 	for p in axial:
 		for s in [-1.0, 1.0]:
 			var dir: Vector3 = p.basis.z.normalized() * s
-			var pos: Vector3 = p.position + dir * p.size.z * 0.5
-			var occupied := false
-			for q in axial:
-				if q != p and q.local_aabb(0.0).has_point(pos + dir * 0.3):
-					occupied = true
-					break
-			if occupied:
-				continue
-			_nodes.append({"pos": pos, "dir": dir, "part": p})
-			var mi := MeshInstance3D.new()
-			var sm := SphereMesh.new()
-			sm.radius = 0.2
-			sm.height = 0.4
-			mi.mesh = sm
-			mi.material_override = _node_mat
-			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			mi.position = pos
-			_craft_root.add_child(mi)
-			_node_markers.append(mi)
+			var centers: Array[Vector3] = [p.position + dir * p.size.z * 0.5]
+			# ikiz motor adaptörü: arka yüzde yan yana iki yuva
+			if s > 0.0 and p.def.has("rear_nodes"):
+				centers.clear()
+				for fx in p.def["rear_nodes"]:
+					centers.append(p.position + dir * p.size.z * 0.5 + p.basis.x.normalized() * float(fx) * p.size.x)
+			for pos in centers:
+				var occupied := false
+				for q in axial:
+					if q != p and q.local_aabb(0.0).has_point(pos + dir * 0.3):
+						occupied = true
+						break
+				if not occupied:
+					_add_node(pos, dir, p)
+
+
+func _add_node(pos: Vector3, dir: Vector3, p: Part) -> void:
+	_nodes.append({"pos": pos, "dir": dir, "part": p})
+	var mi := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.2
+	sm.height = 0.4
+	mi.mesh = sm
+	mi.material_override = _node_mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.position = pos
+	_craft_root.add_child(mi)
+	_node_markers.append(mi)
+
+
+## Uç uca eksen boyunca takılan parça mı (yüzeye takılan sensörler hariç).
+func _is_axial(def: Dictionary) -> bool:
+	return def.get("category", "") in AXIAL and def.get("mount", "") == ""
+
+
+## Askıya takılacak yük mü (silah, savunma podu, dış yük; askının kendisi ve uca takılanlar hariç).
+func _pylon_load(def: Dictionary) -> bool:
+	return def.get("category", "") in ["silah", "savunma", "harici"] and not def.get("pylon", false) and def.get("mount", "") == ""
+
+
+## Askının altında zaten bir yük var mı.
+func _pylon_occupied(pylon: Part, attach: Vector3) -> bool:
+	for q in _preview.parts:
+		if q == pylon or q.def.get("pylon", false):
+			continue
+		var d := q.position - attach
+		if absf(d.x) < 0.25 and absf(d.z) < pylon.size.z * 0.6 and d.y < 0.05 and d.y > -1.5:
+			return true
+	return false
 
 
 func _make_ghost(id: String, mirrored: bool) -> Node3D:
@@ -772,8 +1238,9 @@ func _compute_placement(mouse: Vector2) -> Dictionary:
 	var from := _cam.project_ray_origin(mouse)
 	var to := from + _cam.project_ray_normal(mouse) * 200.0
 	var inv0 := _craft_root.global_transform.affine_inverse()
-	# gövde parçası: ekranda en yakın boş bağlantı noktasına yapış
-	if cat in AXIAL and not _nodes.is_empty():
+	# gövde parçası (ya da askıya takılacak yük): ekranda en yakın boş bağlantı noktasına yapış
+	var on_pylon := _pylon_load(def)
+	if (_is_axial(def) or on_pylon) and not _nodes.is_empty():
 		var best: Dictionary = {}
 		var best_d := 70.0
 		for nd in _nodes:
@@ -797,7 +1264,7 @@ func _compute_placement(mouse: Vector2) -> Dictionary:
 		if not best.is_empty():
 			var dir: Vector3 = best["dir"]
 			var hp: Part = best["part"]
-			var p0: Vector3 = (best["pos"] as Vector3) + dir * size.z * 0.5
+			var p0: Vector3 = (best["pos"] as Vector3) + dir * (size.y if on_pylon else size.z) * 0.5
 			return {"pos": p0.snapped(Vector3.ONE * 0.001), "rot": _with_user(hp.rotation_degrees), "ok": true}
 	var q := PhysicsRayQueryParameters3D.create(from, to, 2)
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
@@ -815,11 +1282,17 @@ func _compute_placement(mouse: Vector2) -> Dictionary:
 
 	var pos := p
 	var rot := Vector3.ZERO
-	var hit_axial: bool = hit_part != null and hit_part.def.get("category", "") in AXIAL
-	if cat in AXIAL and hit_axial and absf(n.z) > 0.6:
+	var hit_axial: bool = hit_part != null and _is_axial(hit_part.def)
+	var mount: String = def.get("mount", "")
+	if _is_axial(def) and hit_axial and absf(n.z) > 0.6:
 		# eksen boyunca uç uca
 		var s := signf(n.z)
 		pos = hit_part.position + Vector3(0, 0, s * (hit_part.size.z * 0.5 + size.z * 0.5))
+	elif mount == "tip":
+		# kanat ucu: dokunulan yüzeyden dışarı (kanadın uç yüzü ±x)
+		pos = p + Vector3(signf(n.x) if absf(n.x) > 0.3 else signf(p.x), 0, 0) * size.x * 0.5
+	elif mount == "surface":
+		pos = p + n * minf(size.x, size.y) * 0.5
 	elif cat in ["kanat", "kontrol"]:
 		# yüzeyin açısını al (KSP gibi): yanda yatay, üstte dikey kuyruk, arada dihedral;
 		# açı, açı adımına yapışır (C ile değişir)
@@ -926,6 +1399,7 @@ func _update_stats() -> void:
 	var guns := 0
 	var intake_area := 0.0
 	var missiles := 0
+	var radar_missiles := 0
 	for m in v.modules:
 		if m is EngineModule:
 			thrust += m.max_thrust
@@ -933,7 +1407,7 @@ func _update_stats() -> void:
 			wing_area += m.area
 			var n: Vector3 = m.part.basis.y
 			if absf(n.y) > 0.7:
-				col += m.part.position * m.area
+				col += m.ac_local() * m.area
 				col_area += m.area
 		elif m is LandingGearModule:
 			has_gear = true
@@ -943,6 +1417,7 @@ func _update_stats() -> void:
 			guns += 1
 		elif m is MissileModule:
 			missiles += 1
+			radar_missiles += 1 if m.radar_guided else 0
 	var mass := v.mass
 	var intake_need := thrust / 70000.0 * 0.5
 	var intake_pct := intake_area / intake_need if intake_need > 0.0 else 1.0
@@ -971,7 +1446,7 @@ func _update_stats() -> void:
 		"Tahmini stall    %d km/sa" % stall_speed,
 		"Kararlılık payı  %+.2f m" % margin,
 		"Hava alığı       %d%%" % (intake_pct * 100.0),
-		"Silah            %d top · %d füze" % [guns, missiles],
+		("Silah            %d top · %d füze" % [guns, missiles]) + ((" (%d radar)" % radar_missiles) if radar_missiles > 0 else ""),
 		"Maliyet          %d" % cost,
 	]))
 	_stats.text += "
@@ -996,6 +1471,10 @@ func _update_stats() -> void:
 		warns.append("• Kararlılık payı çok az (çevik ama zor uçar)")
 	if not has_gear:
 		warns.append("• İniş takımı yok — pistten kalkamaz")
+	if v.bombs_left(true) > 0 and v.targeting_pod() == null:
+		warns.append("• Lazer bomba var ama hedefleme podu yok — güdümsüz düşer")
+	if v.radar_missiles_left() > 0 and v.radar() == null:
+		warns.append("• Radar füzesi var ama radar yok — atılamaz")
 	_warn.text = "\n".join(warns) if not warns.is_empty() else "Uçuşa hazır ✓"
 	_warn.add_theme_color_override("font_color", Color(1.0, 0.55, 0.45) if not warns.is_empty() else Color(0.45, 1.0, 0.6))
 
@@ -1023,30 +1502,243 @@ func _save() -> void:
 	_flash("Kaydedildi: %s" % craft["name"])
 
 
+const LOAD_GROUPS := ["Avcı", "Saldırı", "Destek & Nakliye", "Deneysel", "Sivil", "Benim uçaklarım", "Diğer"]
+
+
 func _open_load() -> void:
 	for c in _load_list.get_children():
 		c.queue_free()
-	var files: Array[String] = []
+	# hazır uçaklar kendi "group" alanına göre, oyuncunun kaydettikleri ayrı grupta
+	var groups := {}
 	for dir_path in ["res://crafts/", USER_DIR]:
 		var d := DirAccess.open(dir_path)
 		if d == null:
 			continue
-		for file in d.get_files():
-			if file.ends_with(".json"):
-				files.append(dir_path + file)
-	for path in files:
-		var data := VesselBuilder.load_craft(path)
-		var b := Button.new()
-		b.text = "%s   (%d parça)" % [data.get("name", path.get_file()), (data.get("parts", []) as Array).size()]
-		b.focus_mode = Control.FOCUS_NONE
-		b.pressed.connect(func() -> void:
-			_push_undo()
-			craft = data.duplicate(true)
-			_name_edit.text = craft.get("name", "")
-			_rebuild()
-			_load_popup.hide())
-		_load_list.add_child(b)
-	_load_popup.popup_centered(Vector2i(420, 360))
+		var names := d.get_files()
+		names.sort()
+		for file in names:
+			if not file.ends_with(".json"):
+				continue
+			var data := VesselBuilder.load_craft(dir_path + file)
+			if data.is_empty():
+				continue
+			var g: String = "Benim uçaklarım" if dir_path == USER_DIR else String(data.get("group", "Diğer"))
+			if not g in LOAD_GROUPS:
+				g = "Diğer"
+			if not groups.has(g):
+				groups[g] = []
+			groups[g].append(data)
+	var first: Dictionary = {}
+	for g in LOAD_GROUPS:
+		if not groups.has(g):
+			continue
+		var head := Label.new()
+		head.text = g.to_upper()
+		head.add_theme_font_size_override("font_size", 12)
+		head.add_theme_color_override("font_color", Color(1.0, 0.82, 0.4))
+		_load_list.add_child(head)
+		for data: Dictionary in groups[g]:
+			if first.is_empty():
+				first = data
+			var b := Button.new()
+			b.text = "  %s   ·  %d parça" % [data.get("name", "?"), _entry_count(data)]
+			b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			b.focus_mode = Control.FOCUS_NONE
+			b.mouse_entered.connect(func() -> void: _show_load_preview(data))
+			b.pressed.connect(func() -> void:
+				_push_undo()
+				craft = data.duplicate(true)
+				_name_edit.text = craft.get("name", "")
+				_rebuild()
+				_load_popup.hide())
+			_load_list.add_child(b)
+	_load_popup.popup_centered(Vector2i(900, 540))
+	if not first.is_empty():
+		_show_load_preview(first)
+
+
+## Ayna kopyalar dahil parça sayısı.
+static func _entry_count(data: Dictionary) -> int:
+	var n := 0
+	for e: Dictionary in data.get("parts", []):
+		n += 2 if e.get("mirror", false) else 1
+	return n
+
+
+# ------------------------------------------------------------------ yükleme önizlemesi
+
+var _pv_vp: SubViewport
+var _pv_root: Node3D
+var _pv_cam: Camera3D
+var _pv_name: Label
+var _pv_desc: Label
+var _pv_stats: Label
+var _pv_shown: Dictionary = {}
+var _pv_floor: MeshInstance3D
+
+
+func _build_load_preview() -> Control:
+	var col := VBoxContainer.new()
+	col.custom_minimum_size = Vector2(520, 0)
+	var box := SubViewportContainer.new()
+	box.stretch = true
+	box.custom_minimum_size = Vector2(520, 270)
+	_pv_vp = SubViewport.new()
+	_pv_vp.own_world_3d = true
+	_pv_vp.msaa_3d = Viewport.MSAA_4X
+	_pv_vp.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
+	box.add_child(_pv_vp)
+	var env := Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.07, 0.09, 0.11)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.6, 0.65, 0.72)
+	env.ambient_light_energy = 0.8
+	env.tonemap_mode = Environment.TONE_MAPPER_AGX
+	var we := WorldEnvironment.new()
+	we.environment = env
+	_pv_vp.add_child(we)
+	var key := DirectionalLight3D.new()
+	key.rotation_degrees = Vector3(-45, -30, 0)
+	key.light_energy = 1.8
+	_pv_vp.add_child(key)
+	var rim := DirectionalLight3D.new()
+	rim.rotation_degrees = Vector3(-15, 150, 0)
+	rim.light_energy = 0.7
+	rim.light_color = Color(0.6, 0.8, 1.0)
+	_pv_vp.add_child(rim)
+	_pv_root = Node3D.new()
+	_pv_vp.add_child(_pv_root)
+	# zemin: uçağın gölgesi düşen, kenarlara doğru kararan yuvarlak hangar zemini
+	var floor_mi := MeshInstance3D.new()
+	var disc := CylinderMesh.new()
+	disc.top_radius = 1.0
+	disc.bottom_radius = 1.0
+	disc.height = 0.02
+	disc.radial_segments = 48
+	floor_mi.mesh = disc
+	var fm := StandardMaterial3D.new()
+	fm.albedo_color = Color(0.34, 0.35, 0.37)
+	fm.roughness = 0.35
+	fm.metallic_specular = 0.6
+	floor_mi.material_override = fm
+	_pv_vp.add_child(floor_mi)
+	_pv_floor = floor_mi
+	for i in 3:
+		var ring := MeshInstance3D.new()
+		var tm := TorusMesh.new()
+		tm.inner_radius = 0.995 - i * 0.25
+		tm.outer_radius = 1.0 - i * 0.25
+		ring.mesh = tm
+		ring.scale = Vector3(1, 0.3, 1)
+		ring.material_override = _std_mat(Color(0.9, 0.72, 0.1), 0.6)
+		floor_mi.add_child(ring)
+	key.shadow_enabled = true
+	key.directional_shadow_max_distance = 120.0
+	_pv_cam = Camera3D.new()
+	_pv_cam.fov = 30.0
+	_pv_vp.add_child(_pv_cam)
+	col.add_child(box)
+	_pv_name = Label.new()
+	_pv_name.add_theme_font_size_override("font_size", 18)
+	_pv_name.add_theme_color_override("font_color", Color(0.45, 1.0, 0.65))
+	col.add_child(_pv_name)
+	_pv_desc = Label.new()
+	_pv_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_pv_desc.custom_minimum_size = Vector2(520, 0)
+	_pv_desc.add_theme_font_size_override("font_size", 13)
+	_pv_desc.add_theme_color_override("font_color", Color(0.82, 0.86, 0.9))
+	col.add_child(_pv_desc)
+	_pv_stats = Label.new()
+	_pv_stats.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_pv_stats.custom_minimum_size = Vector2(520, 0)
+	_pv_stats.add_theme_font_size_override("font_size", 13)
+	_pv_stats.add_theme_color_override("font_color", Color(1.0, 0.85, 0.5))
+	col.add_child(_pv_stats)
+	return col
+
+
+func _clear_load_preview() -> void:
+	for c in _pv_root.get_children():
+		c.queue_free()
+	_pv_shown = {}
+
+
+## Üzerine gelinen uçağı önizlemede kur, kamerayı sığdır, özet bilgileri yaz.
+func _show_load_preview(data: Dictionary) -> void:
+	if data == _pv_shown:
+		return
+	_clear_load_preview()
+	_pv_shown = data
+	var v := VesselBuilder.build(data.duplicate(true))
+	v.freeze = true
+	_pv_root.add_child(v)
+	v.set_physics_process(false)
+	v.set_cold()
+	# sınır kutusu (parça konum ve boyutlarından)
+	var box := AABB()
+	var first := true
+	for p in v.parts:
+		var b := p.local_aabb(0.0)
+		box = b if first else box.merge(b)
+		first = false
+	var center := box.get_center()
+	v.position = -center
+	var radius := maxf(box.size.length() * 0.5, 2.0)
+	# zemin uçağın altında (tekerlek ya da gövde altı), uçaktan biraz geniş
+	var low := box.position.y - center.y
+	for p in v.parts:
+		for m in p.modules:
+			if m is LandingGearModule:
+				low = minf(low, p.position.y - center.y - m.rest_length - m.wheel_radius)
+	_pv_floor.position = Vector3(0, low - 0.02, 0)
+	_pv_floor.scale = Vector3(radius * 1.3, 1, radius * 1.3)
+	_pv_root.rotation = Vector3.ZERO
+	var dir := Vector3(-1.0, 0.5, -0.8).normalized()    # önden-soldan-yukarıdan (burun -z)
+	_pv_cam.position = dir * radius / sin(deg_to_rad(_pv_cam.fov * 0.5)) * 0.62
+	_pv_cam.look_at(Vector3.ZERO, Vector3.UP)
+	_pv_name.text = String(data.get("name", "İsimsiz"))
+	_pv_desc.text = String(data.get("description", ""))
+	_pv_stats.text = _craft_summary(data)
+
+
+## Tanımlardan özet: kütle, yakıt, itki/ağırlık, silahlar, kilitli parçalar.
+func _craft_summary(data: Dictionary) -> String:
+	var mass := 0.0
+	var fuel := 0.0
+	var thrust := 0.0
+	var loads := {}
+	for e: Dictionary in data.get("parts", []):
+		var def := PartLibrary.get_def(String(e.get("part", "")))
+		if def.is_empty():
+			continue
+		var k := 2 if e.get("mirror", false) else 1
+		mass += float(def.get("mass", 0.0)) * k
+		for m: Dictionary in def.get("modules", []):
+			match String(m.get("type", "")):
+				"fuel_tank":
+					fuel += float(m.get("capacity", 0.0)) * k
+				"engine":
+					thrust += float(m.get("max_thrust", 0.0)) * k
+				"missile":
+					mass += (MissileModule.RADAR_MISSILE_MASS if m.get("guidance", "") == "radar" else MissileModule.MISSILE_MASS) * k
+				"bomb":
+					mass += BombModule.BOMB_MASS * k
+		if def.get("category", "") in ["silah", "savunma", "sensör"] or e["part"] in ["refuel_probe"]:
+			var t := String(def.get("title", e["part"]))
+			loads[t] = int(loads.get(t, 0)) + k
+	var full := mass + fuel
+	var lines := PackedStringArray()
+	lines.append("Kütle %d kg (dolu)  ·  yakıt %d kg  ·  itki %d kN  ·  T/W %.2f" % [full, fuel, thrust / 1000.0, thrust / maxf(full * 9.81, 1.0)])
+	if not loads.is_empty():
+		var items := PackedStringArray()
+		for t in loads:
+			items.append("%d× %s" % [loads[t], t] if loads[t] > 1 else t)
+		lines.append("Donanım: " + ", ".join(items))
+	var locked := Career.locked_parts_in(data)
+	if not locked.is_empty():
+		lines.append("🔒 Kilitli parça var (Ar-Ge gerekir)")
+	return "\n".join(lines)
 
 
 func _launch() -> void:
@@ -1259,18 +1951,18 @@ func _build_ui() -> void:
 	info.add_child(_sym_check)
 	_build_paint_ui(info)
 
-	# alt ipucu
+	# alt ipucu: yalnız temel tuşlar; tam liste F1 penceresinde
 	var hint := Label.new()
-	hint.text = "Sol tık: yerleştir / taşı  ·  Sağ tık: parça penceresi  ·  Del: sil  ·  Yön tuşları/PgUp-Dn: ince kaydır  ·  W/S A/D Q/E: döndür (C: açı adımı, Boşluk: sıfırla)  ·  X: simetri  ·  Shift+tekerlek, [ ]: boyut  ·  Ctrl+Z / Y: geri al / yinele  ·  Ctrl+S: kaydet  ·  F: ortala\nSağ sürükle: kamera  ·  Orta sürükle: kaydır  ·  Tekerlek: yakınlaş"
-	hint.offset_top = -58
-	hint.add_theme_font_size_override("font_size", 13)
+	hint.text = "Sol tık: yerleştir / taşı  ·  Sağ tık: parça penceresi  ·  X: simetri  ·  Sağ sürükle: kamera  ·  F1: tüm kısayollar"
+	hint.add_theme_font_size_override("font_size", 14)
 	hint.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	hint.offset_top = -40
-	hint.offset_bottom = -12
+	hint.offset_top = -34
+	hint.offset_bottom = -10
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.add_theme_color_override("font_color", Color(0.8, 0.85, 0.9))
 	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(hint)
+	_build_help(root)
 
 	# yerleştirme bilgisi (seçili parça, ölçek, dönüş)
 	_place_label = Label.new()
@@ -1297,21 +1989,27 @@ func _build_ui() -> void:
 	_hover_label.visible = false
 	root.add_child(_hover_label)
 
-	# yükleme penceresi
+	# yükleme penceresi: solda gruplu liste, sağda üzerine gelinen uçağın dönen 3B önizlemesi
 	_load_popup = PopupPanel.new()
 	_load_popup.theme = _theme
+	var lh := HBoxContainer.new()
+	lh.add_theme_constant_override("separation", 14)
 	var lv := VBoxContainer.new()
 	var lt := Label.new()
 	lt.text = "UÇAK YÜKLE"
 	lt.add_theme_color_override("font_color", Color(0.45, 1.0, 0.65))
 	lv.add_child(lt)
 	var ls := ScrollContainer.new()
-	ls.custom_minimum_size = Vector2(400, 300)
+	ls.custom_minimum_size = Vector2(330, 470)
+	ls.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_load_list = VBoxContainer.new()
 	_load_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ls.add_child(_load_list)
 	lv.add_child(ls)
-	_load_popup.add_child(lv)
+	lh.add_child(lv)
+	lh.add_child(_build_load_preview())
+	_load_popup.add_child(lh)
+	_load_popup.popup_hide.connect(func() -> void: _clear_load_preview())
 	layer.add_child(_load_popup)
 
 
@@ -1662,7 +2360,7 @@ func _open_crew() -> void:
 		t.add_theme_color_override("font_color", Color(0.45, 1.0, 0.65))
 		head.add_child(t)
 		var hire := Button.new()
-		hire.text = "  + Yeni pilot al (%d ₺)  " % HIRE_COST
+		hire.text = "  + Yeni pilot al (%s)  " % ("ücretsiz" if HIRE_COST == 0 else "%d ₺" % HIRE_COST)
 		hire.focus_mode = Control.FOCUS_NONE
 		hire.pressed.connect(func() -> void:
 			if not Career.sandbox() and Career.money < HIRE_COST:
@@ -1848,7 +2546,7 @@ func _apply_paint(custom_color := false) -> void:
 
 # ------------------------------------------------------------------ kariyer: para ve Ar-Ge
 
-const HIRE_COST := 4000
+const HIRE_COST := 0          # şimdilik ücretsiz (eski: 4000 ₺)
 var _unlock_dialog: ConfirmationDialog
 var _unlock_id := ""
 

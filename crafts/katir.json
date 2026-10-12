@@ -1,5 +1,6 @@
 {
 	"name": "Katır",
+	"group": "Destek & Nakliye",
 	"description": "Kargo uçağı: 4 paraşütlü sandık, J-40 motor, düz kanat, hava freni. Yardım bırakma görevleri için.",
 	"paint": {"scheme": "deniz", "number": "K-12"},
 	"parts": [
@@ -17,6 +18,6 @@
 		{"part": "airbrake",         "pos": [0, 0.7, 6.0]},
 
 		{"part": "gear_nose",        "pos": [0, -0.6, -0.9]},
-		{"part": "gear_main",        "pos": [1.2, -0.6, 5.6], "mirror": true}
+		{"part": "gear_main",        "pos": [1.2, -0.6, 5.15], "mirror": true}
 	]
 }

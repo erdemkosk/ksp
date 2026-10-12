@@ -1,19 +1,26 @@
 class_name Bomb
 extends Node3D
-## Güdümsüz bomba: yerçekimi + hava direnci ile düşer, burnu hız yönüne döner,
-## çarpınca büyük alan hasarıyla patlar. HUD'daki CCIP aynı fizikle hesaplanır (simulate_impact).
+## Bomba: yerçekimi + hava direnci ile düşer, burnu hız yönüne döner, çarpınca büyük alan
+## hasarıyla patlar. HUD'daki CCIP aynı fizikle hesaplanır (simulate_impact).
+## Lazer güdümlü (laser != null): podun işaretlediği nokta görünürken kanatçıklarıyla oraya
+## döner (oransal güdüm, en çok GUIDE_ACCEL). Kanatçıklar biraz kaldırma da üretir: süzülerek
+## güdümsüzden daha uzağa gider. İşaret kaybolursa balistik devam eder.
 
 const DRAG := 0.00018        ## v² katsayısı (deniz seviyesi)
 const BLAST_RADIUS := 34.0
 const BLAST_DAMAGE := 1600.0
 const ARM_TIME := 0.6
+const GUIDE_ACCEL := 32.0    ## m/s² (~3 G)
+const SEEKER_CONE := deg_to_rad(35.0)
 
 ## Son bombanın düştüğü yer (testler için).
 static var last_impact := Vector3.ZERO
 
 var velocity := Vector3.ZERO
 var shooter: Vessel
+var laser: TargetingPodModule     ## işaretleyici pod (LGB); null = güdümsüz
 var _age := 0.0
+var _prev_los := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -67,6 +74,8 @@ func _physics_process(delta: float) -> void:
 	_age += delta
 	var pos := global_position
 	velocity = step(pos, velocity, delta)
+	if laser != null:
+		_guide(pos, delta)
 	var new_pos := pos + velocity * delta
 	var q := PhysicsRayQueryParameters3D.create(pos, new_pos, 1 | 2 | 8)
 	if is_instance_valid(shooter) and _age < 2.0:
@@ -90,3 +99,33 @@ func _physics_process(delta: float) -> void:
 		look_at(new_pos + velocity, Planet.up_at(new_pos))
 	if _age > 90.0:
 		queue_free()
+
+
+## Lazer işareti (podun takip noktası) arayıcı konisindeyse ona doğru yanal ivme.
+func _guide(pos: Vector3, delta: float) -> void:
+	var spot: Variant = null
+	if is_instance_valid(laser) and is_instance_valid(laser.vessel) and laser.part in laser.vessel.parts and laser.vessel.has_power():
+		spot = laser.target_point()
+	var speed := velocity.length()
+	if spot == null or speed < 1.0 or _age < 0.5:
+		_prev_los = Vector3.ZERO
+		return
+	var los: Vector3 = (spot as Vector3) - pos
+	var fwd := velocity / speed
+	if fwd.angle_to(los) > SEEKER_CONE:
+		_prev_los = Vector3.ZERO
+		return
+	var los_dir := los.normalized()
+	# kanatçık kaldırması: yerçekiminin bir kısmını karşılar (süzülme)
+	var up := Planet.up_at(pos)
+	var lift := up - fwd * up.dot(fwd)
+	var accel := lift * 9.81 * 0.45
+	if _prev_los != Vector3.ZERO:
+		var los_rate := (los_dir - _prev_los) / delta
+		var cmd := los_rate * 3.5 * maxf(speed, 80.0)
+		# yerçekimi düşüşünü telafi (bomba hedefin üstünden geçmesin)
+		cmd -= Planet.gravity_at(pos) * 0.6
+		cmd -= fwd * cmd.dot(fwd)
+		accel += cmd
+	_prev_los = los_dir
+	velocity += accel.limit_length(GUIDE_ACCEL) * delta

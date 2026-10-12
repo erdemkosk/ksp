@@ -96,9 +96,9 @@ func _action_items() -> Array[Dictionary]:
 	var v := _vessel()
 	var out: Array[Dictionary] = []
 	if _on_foot():
-		out.append(_item("Uçuşu bitir", "RAPOR", ACC, main.end_flight))
+		out.append(_item("Uçuşu bitir", "RAPOR", ACC, main.end_flight, "⏎"))
 		if not main._ejected:
-			out.append(_item("Uçağa bin", "F", DIM, main.try_board))
+			out.append(_item("Uçağa bin", "", DIM, main.try_board, "F"))
 		return out
 	var chutes := v.get_modules_of(ChuteModule)
 	if not chutes.is_empty():
@@ -111,17 +111,36 @@ func _action_items() -> Array[Dictionary]:
 						m.deploy()
 					elif m.state == 1:
 						m.release()))
+		out[-1]["id"] = "chute"
 	var brakes := v.get_modules_of(AirbrakeModule)
 	if not brakes.is_empty():
 		var on: bool = brakes[0].hold
 		out.append(_item("Hava freni", "AÇIK" if on else "KAPALI", AMBER if on else DIM, func() -> void:
 			for m in v.get_modules_of(AirbrakeModule):
 				m.hold = not on))
+		out[-1]["id"] = "airbrake"
 	if not v.get_modules_of(LandingGearModule).is_empty():
 		out.append(_item("İniş takımı", "AŞAĞI" if v.gear_down else "YUKARI", ACC if v.gear_down else DIM,
 			func() -> void: v.gear_down = not v.gear_down))
+		out[-1]["id"] = "gear"
 	if v.flares_left() > 0:
 		out.append(_item("Fişek at", "×%d" % v.flares_left(), ACC, func() -> void: v.drop_flares()))
+		out[-1]["id"] = "flare"
+	if v.has_chaff():
+		out.append(_item("Chaff at", "×%d" % v.chaff_left(), Color(0.45, 0.75, 1.0) if v.chaff_left() > 0 else DIM, func() -> void: v.drop_chaff()))
+		out[-1]["id"] = "chaff"
+	var boosters := v.get_modules_of(BoosterModule)
+	if not boosters.is_empty():
+		var ready := 0
+		var burning := false
+		for b: BoosterModule in boosters:
+			ready += 1 if not b.lit else 0
+			burning = burning or b.burning()
+		out.append(_item("JATO ateşle", "YANIYOR" if burning else ("HAZIR ×%d" % ready if ready > 0 else "BİTTİ"),
+			AMBER if burning else (ACC if ready > 0 else DIM), func() -> void:
+				for b: BoosterModule in v.get_modules_of(BoosterModule):
+					b.ignite()))
+		out[-1]["id"] = "jato"
 	if not v.engines().is_empty():
 		var run := v.engines_running()
 		out.append(_item("Motor", "ÇALIŞIYOR" if run else "KAPALI", ACC if run else DIM, func() -> void:
@@ -129,22 +148,94 @@ func _action_items() -> Array[Dictionary]:
 				v.shutdown_engines()
 			else:
 				v.auto_start()))
+		out[-1]["id"] = "engine"
+	if v.fuel_capacity() > 0.0 and (v.fuel_dumping or (v.radar_altitude() > 20.0 and v.can_dump_fuel())):
+		var dumping := v.fuel_dumping
+		out.append(_item("Yakıt boşalt", ("%d kg · DUR" % v.fuel_amount()) if dumping else "%d kg" % v.fuel_amount(), AMBER if dumping else DIM,
+			func() -> void: v.set_fuel_dump(not v.fuel_dumping)))
+		out[-1]["id"] = "fueldump"
 	if v.cockpit():
 		var open := v.cockpit().canopy_open
 		out.append(_item("Kanopi", "AÇIK" if open else "KAPALI", AMBER if open else DIM,
 			func() -> void: v.cockpit().canopy_open = not v.cockpit().canopy_open))
-	if is_instance_valid(main.autoland):
-		out.append(_item("Otomatik inişi bırak", "PİLOT İNDİRİYOR", Color(0.4, 0.85, 1.0), main.cancel_autoland))
-	elif v.radar_altitude() > 20.0:
-		out.append(_item("Pilot indirsin", "OTOMATİK İNİŞ", Color(0.4, 0.85, 1.0), main.start_autoland))
-	if main.can_end_flight():
-		out.append(_item("Uçuşu bitir", "RAPOR", ACC, main.end_flight))
+		out[-1]["id"] = "canopy"
 	for m in v.modules:
 		if m is TargetingPodModule:
 			out.append(_item("Hedefleme podu", "F8", ACC if main.pod_panel.open else DIM, main.pod_panel.toggle))
+			out[-1]["id"] = "pod"
 			break
-	out.append(_item("Telsiz…", "F2", DIM, func() -> void: radio_mode = true))
-	out.append(_item("FIRLAT", "⌫ ⌫" if _eject_arm <= 0.0 else "TEKRAR BAS!", RED, _eject_press, "⌫"))
+	if is_instance_valid(main.autoland):
+		out.append(_item("Otomatik inişi bırak", "PİLOT İNDİRİYOR", Color(0.4, 0.85, 1.0), main.cancel_autoland))
+		out[-1]["id"] = "autoland"
+	elif v.radar_altitude() > 20.0:
+		out.append(_item("Pilot indirsin", "OTOMATİK İNİŞ", Color(0.4, 0.85, 1.0), main.start_autoland))
+		out[-1]["id"] = "autoland"
+	out = _layout(out)
+	if main.can_end_flight():
+		out.append(_item("Uçuşu bitir", "RAPOR", ACC, main.end_flight, "⏎"))
+	out.append(_item("Telsiz…", "", DIM, func() -> void: radio_mode = true, "F2"))
+	if v.cockpit() == null or v.cockpit().can_eject():   # yolcu uçağında fırlatma koltuğu yok
+		out.append(_item("FIRLAT", "⌫ ⌫" if _eject_arm <= 0.0 else "TEKRAR BAS!", RED, _eject_press, "⌫"))
+	return out
+
+
+## Her eylemin SABİT numarası: liste duruma göre değişse de (havada "Pilot indirsin" eklenir,
+## yerde "Uçuşu bitir" çıkar) bir tuş hep aynı işi yapar. Takım hep 1, motor hep 2…
+const SLOTS := ["gear", "engine", "canopy", "flare", "airbrake", "chute", "jato", "pod", "autoland", "chaff"]
+
+
+## Eylem kimliği → tuş numarası. Hangarın EYLEMLER sekmesi (craft["actions"]: [{id, on}])
+## sıra verdiyse numaralar o sırayla, verilmediyse SLOTS sırasıyla dağıtılır; uçuş boyunca değişmez.
+func _slot_map() -> Dictionary:
+	var cfg: Array = Game.flight_craft.get("actions", [])
+	var out := {}
+	if cfg.is_empty():
+		for i in mini(SLOTS.size(), 9):   # 1-9; fazlası tuşsuz görünür (_layout "·")
+			out[SLOTS[i]] = i + 1
+		return out
+	var ids: Array = []
+	var hidden := {}
+	for c: Dictionary in cfg:
+		if c.get("on", true):
+			ids.append(c.get("id", ""))
+		else:
+			hidden[c.get("id", "")] = true
+	for id in SLOTS:   # ayarda geçmeyen eylemler (ör. otomatik iniş) sona
+		if not id in ids and not hidden.has(id):
+			ids.append(id)
+	for i in mini(ids.size(), 9):
+		out[ids[i]] = i + 1
+	return out
+
+
+## 1-9 dışındaki sabit tuşlar (seyrek kullanılan eylemler).
+const EXTRA_KEYS := {"fueldump": "0"}
+
+
+## Kimlikli eylemlere sabit tuşu yaz ve tuşa göre sırala (1-9, sonra 0, sonra tuşsuzlar "·").
+## Hangarda gizlenenler çıkar; tabloda olmayan yeni bir eylem kaybolmaz, tuşsuz görünür.
+func _layout(items: Array[Dictionary]) -> Array[Dictionary]:
+	var slots := _slot_map()
+	var hidden := {}
+	for c: Dictionary in Game.flight_craft.get("actions", []):
+		if not c.get("on", true):
+			hidden[c.get("id", "")] = true
+	var out: Array[Dictionary] = []
+	for it in items:
+		var id: String = it.get("id", "")
+		if hidden.has(id):
+			continue
+		if slots.has(id):
+			it["key"] = str(slots[id])
+		elif EXTRA_KEYS.has(id):
+			it["key"] = EXTRA_KEYS[id]
+		else:
+			it["key"] = "·"
+		out.append(it)
+	var rank := func(it: Dictionary) -> int:
+		var k: String = it["key"]
+		return int(k) if k.is_valid_int() and k != "0" else (10 if k == "0" else 11)
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return rank.call(a) < rank.call(b))
 	return out
 
 
@@ -162,6 +253,10 @@ func _radio_items() -> Array[Dictionary]:
 
 
 func _eject_press() -> void:
+	var v := _vessel()
+	if v != null and v.cockpit() != null and not v.cockpit().can_eject():
+		main.eject()   # fırlatma koltuğu yok: yalnız uyarı gösterir
+		return
 	if _eject_arm > 0.0:
 		_eject_arm = 0.0
 		main.eject()
@@ -189,7 +284,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not visible or not (event is InputEventKey) or not event.pressed or event.echo:
 		return
 	var k: int = event.physical_keycode
-	if (k == KEY_ENTER or k == KEY_KP_ENTER) and _end_btn.visible:
+	if (k == KEY_ENTER or k == KEY_KP_ENTER) and (_end_btn.visible or (not radio_mode and _find_key("⏎") >= 0)):
 		main.end_flight()
 		get_viewport().set_input_as_handled()
 		return
@@ -201,12 +296,20 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif k == KEY_BACKSPACE:
 		_eject_press()
 		get_viewport().set_input_as_handled()
-	elif k >= KEY_1 and k <= KEY_9 and not event.ctrl_pressed and not event.alt_pressed:
-		var n := k - KEY_1
+	elif k >= KEY_0 and k <= KEY_9 and not event.ctrl_pressed and not event.alt_pressed:
+		# telsizde numara sıradır; eylemlerde her eylemin sabit numarası vardır (_layout).
 		# FIRLAT numarayla tetiklenmez (yanlışlıkla atılmasın): sadece ⌫ ya da tık
-		if n < _items.size() and _items[n]["label"] != "FIRLAT":
-			_run(n)
+		var i := (k - KEY_1) if radio_mode else _find_key(str(k - KEY_0))
+		if i >= 0 and i < _items.size() and _items[i]["label"] != "FIRLAT":
+			_run(i)
 			get_viewport().set_input_as_handled()
+
+
+func _find_key(key: String) -> int:
+	for i in _items.size():
+		if _items[i]["key"] == key:
+			return i
+	return -1
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -239,7 +342,7 @@ func _draw() -> void:
 	draw_style_box(sb, Rect2(Vector2.ZERO, size))
 	var title := "TELSİZ" if radio_mode else "EYLEMLER"
 	draw_string(_bold, Vector2(12, 20), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, ACC)
-	var hint := ("1-%d · F2 kapat" % (_items.size() - 1)) if radio_mode else ("1-9 · F2 telsiz  " + ("▲" if collapsed else "▼"))
+	var hint := ("1-%d · F2 kapat" % (_items.size() - 1)) if radio_mode else ("0-9 · F2 telsiz  " + ("▲" if collapsed else "▼"))
 	var hw := _font.get_string_size(hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x
 	draw_string(_font, Vector2(W - hw - 12, 19), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, DIM)
 	if collapsed:

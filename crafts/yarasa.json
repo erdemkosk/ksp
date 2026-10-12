@@ -1,0 +1,22 @@
+{
+	"name": "Yarasa Uçan Kanat",
+	"group": "Deneysel",
+	"description": "B-2 tipi kuyruksuz uçan kanat: keskin burun, alçak kanopi, kaldırma üreten geniş taşıyıcı gövde, kırık ok kanat. Yön kararlılığı ve sapma için arkada eğik tam hareketli V yüzeyler, kanat uçlarında winglet. Firar kenarındaki elevonlar yunuslama + yatış verir. Deneysel: kararlılık payı küçük.",
+	"paint": {"scheme": "gece", "number": "B-1"},
+	"parts": [
+		{"part": "nose_chine",     "pos": [0, 0, -2.6]},
+		{"part": "cockpit_low",    "pos": [0, 0, 0]},
+		{"part": "lifting_body",   "pos": [0, 0, 3.5]},
+		{"part": "jet_engine",     "pos": [0, 0, 6.75]},
+
+		{"part": "wing_custom",    "pos": [5.5, -0.1, 3.393], "rot": [1, 0, 2], "mirror": true,
+			"wing": {"span": 8.0, "root": 6.0, "tip": 1.4, "sweep": 30.0, "thick": 0.11, "crank": 0.25, "crank_sweep": 55.0}},
+		{"part": "elevon",         "pos": [5.0, -0.05, 6.68], "mirror": true},
+		{"part": "elevon",         "pos": [7.5, 0.0, 7.22], "mirror": true},
+		{"part": "winglet",        "pos": [9.55, 0.45, 6.6], "rot": [0, 0, 90], "mirror": true},
+		{"part": "tail_v",         "pos": [1.0, 1.25, 5.0], "rot": [0, 0, 70], "mirror": true},
+
+		{"part": "gear_nose",      "pos": [0, -0.6, -1.0]},
+		{"part": "gear_main",      "pos": [1.6, -0.6, 4.2], "mirror": true}
+	]
+}

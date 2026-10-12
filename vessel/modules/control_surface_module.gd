@@ -7,6 +7,8 @@ var max_deflection := deg_to_rad(20.0)
 var rate := deg_to_rad(90.0)
 ## Gövde torku eksenlerine ağırlıklar: x = pitch, y = yaw, z = roll.
 var axis_weights := Vector3.ZERO
+## Hangarda kapatılan eksenler 0 (x = pitch, y = yaw, z = roll).
+var axis_mask := Vector3.ONE
 
 var _visual: Node3D
 ## Ağır hasarda yüzey o anki açısında sıkışabilir.
@@ -58,3 +60,4 @@ func _compute_weights() -> void:
 	for i in 3:
 		if absf(axis_weights[i]) < 0.15:
 			axis_weights[i] = 0.0
+	axis_weights *= axis_mask

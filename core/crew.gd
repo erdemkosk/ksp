@@ -129,8 +129,12 @@ func add_kill() -> void:
 ## Otomatik testler oyuncunun kadro kaydını değiştirmesin.
 func _testing() -> bool:
 	for k in ["autotest", "crashtest", "starttest", "gtest", "weapontest", "guntest", "dogfight", "missiontest",
-			"aiplayer", "bombtest", "droptest", "mousetest", "damagedemo", "pulldemo", "pulltest", "ejecttest", "loaltest", "savetest", "walktest", "missionendtest", "aeroprobe", "breakcheck", "partsprobe", "hangartest", "screenshot"]:
+			"aiplayer", "bombtest", "droptest", "mousetest", "damagedemo", "damagefx", "pulldemo", "pulltest", "ejecttest", "loaltest", "savetest", "walktest", "missionendtest", "aeroprobe", "breakcheck", "partsprobe", "hangartest", "screenshot"]:
 		if Game.args.has(k):
+			return true
+	# yeni eklenen test argümanları listeye yazılmasa da korunsun: *test, *probe, *demo, balance
+	for k: String in Game.args.keys():
+		if k.ends_with("test") or k.ends_with("probe") or k.ends_with("demo") or k in ["balance", "sizes", "damagefx"]:
 			return true
 	return false
 

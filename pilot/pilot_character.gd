@@ -6,6 +6,10 @@ extends CharacterBody3D
 ## A/D ve W/S ile paraşüt yönlendirilir. Yere ~12 m/s üstünde çarpan pilot ölür.
 
 signal landed(impact_speed: float)
+## Yürürken yüksekten düşüp öldü (paraşütle inişte `landed` yeterli)
+signal died(impact_speed: float)
+
+const FATAL_IMPACT := 12.0    ## m/s: bundan sert yere çarpan pilot ölür (ragdoll)
 
 const WALK := 2.9
 const RUN := 6.8
@@ -34,6 +38,8 @@ var _squash := 0.0
 var _breath := 0.0
 var _was_floor := true
 var _off_floor := 0.0
+var ragdoll: PilotRagdoll         ## öldüyse cansız beden (karakter onu izler)
+var impact_velocity := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -60,6 +66,11 @@ func face(yaw: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if ragdoll != null:
+		# ölü: karakter (kamera ve arazi çarpışma odağı) bedeni izler
+		if is_instance_valid(ragdoll):
+			global_position = ragdoll.center()
+		return
 	var frame := Planet.local_basis(global_position)
 	global_basis = frame   # gövde her zaman yerel dik
 	up_direction = frame.y
@@ -94,7 +105,13 @@ func _physics_process(delta: float) -> void:
 		vertical += Planet.gravity_at(global_position) * delta
 	var fall_speed := -vertical.dot(up)
 	velocity = horizontal + vertical
+	var pre := velocity
 	move_and_slide()
+	# yüksekten düşüş (uçağın üstünden, uçurumdan): ölümcül
+	if (is_on_floor() or get_slide_collision_count() > 0) and _off_floor > 0.25 and fall_speed > FATAL_IMPACT:
+		die(pre)
+		died.emit(fall_speed)
+		return
 	# iniş: dizler esner (düşüş hızıyla orantılı)
 	if is_on_floor() and _off_floor > 0.25 and fall_speed > 2.0:
 		_squash = clampf(fall_speed / 8.0, 0.2, 1.0)
@@ -193,6 +210,7 @@ func _fly_ejected(delta: float, frame: Basis) -> void:
 	if velocity.length() > 400.0:
 		velocity = velocity.limit_length(400.0)
 	var impact := -velocity.dot(up)
+	impact_velocity = velocity
 	move_and_slide()
 	var alt := Planet.altitude(global_position)
 	var in_water := alt < 0.3 and TerrainGen.height(Planet.surface_dir(global_position)) < 0.0
@@ -228,6 +246,18 @@ func _fly_ejected(delta: float, frame: Basis) -> void:
 
 func _land(in_water: bool, impact: float) -> void:
 	airborne = false
+	if not in_water and impact > FATAL_IMPACT:
+		# ölümcül çarpma: koltuk / paraşüt bırakılır, beden ragdoll olur (main raporlar)
+		if _seat:
+			_drop_seat(Planet.local_basis(global_position))
+		if _rig:
+			_rig.queue_free()
+			_rig = null
+		if _smoke:
+			_smoke.emitting = false
+		die(impact_velocity)
+		landed.emit(impact)
+		return
 	_squash = clampf(impact / 8.0, 0.3, 1.0)
 	if _rig:
 		# kubbe söner, yere yığılır, sonra kaybolur
@@ -243,6 +273,23 @@ func _land(in_water: bool, impact: float) -> void:
 	model.pose_standing()
 	velocity = Vector3.ZERO
 	landed.emit(0.0 if in_water else impact)
+
+
+## Pilot öldü: model parçaları eklemli rijit gövdelere geçer, karakter çarpışmasız izleyici olur.
+## vel: çarpmadan hemen önceki hız (bedenin bir kısmı yere geçer, kalanı yuvarlanma).
+func die(vel: Vector3) -> void:
+	if ragdoll != null:
+		return
+	enabled = false
+	airborne = false
+	collision_layer = 0
+	collision_mask = 0
+	var up := Planet.up_at(global_position)
+	var along := vel - up * vel.dot(up)
+	var spin := up.cross(along).normalized() * clampf(along.length() * 0.35, 1.0, 8.0) if along.length() > 0.5 \
+		else Vector3(randf_range(-2, 2), randf_range(-1, 1), randf_range(-2, 2))
+	ragdoll = PilotRagdoll.spawn(model, along * 0.7 + up * clampf(-vel.dot(up) * 0.15, 0.0, 3.0), spin)
+	Sfx.play_at("hydraulic_thunk.ogg", global_position, 2.0, 0.6, 120.0)
 
 
 func _build_seat() -> void:

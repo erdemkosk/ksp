@@ -46,6 +46,34 @@ static func rebuild(v: Vessel) -> void:
 			var f := overlap * vert * dist
 			if f > 0.03:
 				w.upstream.append([u, f])
+	# --- uç plakaları: kanat ucuna değen winglet / kanat ucu rayı indüklenen direnci azaltır
+	var tips: Array[Part] = []
+	for p in v.parts:
+		if p.def.get("tip_device", false):
+			tips.append(p)
+	for w: WingModule in wings:
+		w.tip_factor = 1.0
+		if w.part.def.get("tip_device", false) or not _horizontal(w.part):
+			continue
+		var half := w.part.size.x * 0.5
+		var span := w.part.basis.x.normalized()
+		for t in tips:
+			for s in [-1.0, 1.0]:
+				var tip_pos: Vector3 = w.part.position + span * half * s
+				if t.position.distance_to(tip_pos) < maxf(t.size.x, t.size.y) * 0.5 + 0.8:
+					w.tip_factor = 0.82
+	# --- sınır tabaka ayırıcı: yakınındaki alıklara bonus
+	var splitters: Array[Part] = []
+	for p in v.parts:
+		for m in p.modules:
+			if m is SplitterModule:
+				splitters.append(p)
+	for m in v.modules:
+		if m is IntakeModule:
+			m.splitter_bonus = 0.0
+			for sp in splitters:
+				if sp.position.distance_to(m.part.position) < SplitterModule.REACH + m.part.size.z * 0.5:
+					m.splitter_bonus = SplitterModule.BONUS
 	# --- gövde ön/arka yüzleri
 	for b: BodyDragModule in bodies:
 		b.front_open = true

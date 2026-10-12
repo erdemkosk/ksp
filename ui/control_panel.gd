@@ -79,7 +79,7 @@ func _starting() -> bool:
 
 func _visible_now() -> bool:
 	return is_instance_valid(vessel) and vessel.is_inside_tree() and is_instance_valid(camera) \
-		and camera.mode != FlightCamera.Mode.COCKPIT and not camera.is_eva() and vessel.has_pilot() and Hud.panels_open
+		and not camera.is_eva() and vessel.has_pilot() and Hud.panels_open   # kokpit görünümünde de açık (kenardan gizlenebilir)
 
 
 func _process(delta: float) -> void:

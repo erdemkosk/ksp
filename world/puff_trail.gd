@@ -63,6 +63,17 @@ static func create(src: Node3D, local := Vector3.ZERO, kind := "missile") -> Puf
 			t.c1 = Color(0.9, 0.2, 0.05, 0.0)
 			t.drift = 1.0
 			t.rate = 30.0
+		"dump":
+			# yakıt boşaltma: kanat ucundan uzun, beyaz buhar perdesi
+			t.spacing = 0.8
+			t.life = 6.0
+			t.size0 = 1.0
+			t.size1 = 6.5
+			t.c0 = Color(0.93, 0.95, 0.97, 0.5)
+			t.c1 = Color(0.9, 0.92, 0.95, 0.0)
+			t.drift = 1.2
+			t.jitter = 0.15
+			t.max_puffs = 600
 		"leak":
 			t.spacing = 1.2
 			t.life = 2.2

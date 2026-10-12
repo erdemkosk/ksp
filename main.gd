@@ -83,6 +83,8 @@ func _ready() -> void:
 				m.hold = true).call_deferred()
 	if Game.args.has("camdist"):
 		camera.distance = float(Game.args["camdist"])
+	if Game.args.has("headpitch"):
+		camera.head_pitch = deg_to_rad(float(Game.args["headpitch"]))
 	if Game.args.has("camel"):
 		camera.orbit_elevation = deg_to_rad(float(Game.args["camel"]))
 
@@ -116,6 +118,9 @@ func _ready() -> void:
 	action_bar = ActionBar.new()
 	action_bar.main = self
 	hud.add_child(action_bar)
+	time_warp = TimeWarp.new()
+	time_warp.main = self
+	hud.add_child(time_warp)
 	var pause := PauseMenu.new()
 	pause.main = self
 	add_child(pause)
@@ -199,6 +204,10 @@ func _ready() -> void:
 		var alt_ := preload("res://tests/autoland_test.gd").new()
 		alt_.main = self
 		add_child.call_deferred(alt_)
+	if Game.args.has("enginetest"):
+		var et := preload("res://tests/engine_test.gd").new()
+		et.main = self
+		add_child.call_deferred(et)
 	if Game.args.has("partsprobe"):
 		var pp := preload("res://tests/parts_probe.gd").new()
 		pp.main = self
@@ -227,6 +236,20 @@ func _ready() -> void:
 		var rp := preload("res://tests/river_probe.gd").new()
 		rp.main = self
 		add_child.call_deferred(rp)
+	if Game.args.has("balance"):
+		var bp := preload("res://tests/balance_probe.gd").new()
+		bp.main = self
+		add_child.call_deferred(bp)
+	if Game.args.has("dumptest"):
+		get_tree().create_timer(1.0).timeout.connect(func() -> void:
+			var f0 := vessel.fuel_amount()
+			vessel.set_fuel_dump(true)
+			get_tree().create_timer(5.0).timeout.connect(func() -> void:
+				print("DUMPTEST 5 sn: %.0f -> %.0f kg (%.1f kg/s)" % [f0, vessel.fuel_amount(), (f0 - vessel.fuel_amount()) / 5.0])))
+	if Game.args.has("presetprobe"):
+		var pp := preload("res://tests/preset_probe.gd").new()
+		pp.main = self
+		add_child.call_deferred(pp)
 	if Game.args.has("aeroprobe"):
 		var ap := preload("res://tests/aero_probe.gd").new()
 		ap.main = self
@@ -248,6 +271,10 @@ func _ready() -> void:
 		var dd := preload("res://tests/damage_demo.gd").new()
 		dd.main = self
 		add_child.call_deferred(dd)
+	if Game.args.has("damagefx"):
+		var dfx := preload("res://tests/damage_fx_test.gd").new()
+		dfx.main = self
+		add_child.call_deferred(dfx)
 	if Game.args.has("mousetest"):
 		var mt := preload("res://tests/mouse_test.gd").new()
 		mt.main = self
@@ -272,12 +299,17 @@ func _ready() -> void:
 		var dt := preload("res://tests/dogfight_test.gd").new()
 		dt.main = self
 		add_child.call_deferred(dt)
+	if Game.args.has("wingtest"):
+		player.enabled = false
+		var wt2 := preload("res://tests/wing_test.gd").new()
+		wt2.main = self
+		add_child.call_deferred(wt2)
 	if Game.args.has("eva"):
 		get_tree().create_timer(1.0).timeout.connect(try_eva)
 	# serbest uçuşta düşman yok (F7 ile çağrılabilir); eski testler --drone ile pasif hedef ister
 	if mdef.is_empty() and Game.resume.is_empty() and not Game.args.has("nolife") and not Crew._testing():
 		_spawn_civil_traffic()
-	if mdef.is_empty() and (Game.args.has("drone") or Game.args.has("weapontest") or Game.args.has("dogfight") or Game.args.has("guntest")):
+	if mdef.is_empty() and (Game.args.has("drone") or Game.args.has("weapontest") or Game.args.has("dogfight") or Game.args.has("guntest") or Game.args.has("wingtest")):
 		spawn_enemy()
 
 
@@ -394,7 +426,7 @@ func _spawn(xform: Transform3D, velocity: Vector3) -> void:
 	vessel.autopilot_toggle.connect(player.toggle_autopilot)
 	vessel.system_message.connect(func(t: String) -> void: hud.show_message(t, 2.5))
 	vessel.weapon_fired.connect(func(k: int) -> void:
-		if k == 1 and radio:
+		if (k == Vessel.WEAPON_MISSILE or k == Vessel.WEAPON_RADAR) and radio:
 			radio.on_missile())
 	world.add_child(vessel)
 	player.autopilot.disengage()
@@ -432,6 +464,7 @@ func try_eva() -> void:
 	world.add_child(pilot)
 	pilot.global_position = cockpit.exit_point()
 	pilot.reset_physics_interpolation()
+	pilot.died.connect(_on_pilot_died)
 	_animate_board(cockpit, false)
 	camera.set_eva(pilot)
 	terrain.collision.target = pilot
@@ -440,6 +473,8 @@ func try_eva() -> void:
 
 
 func try_board() -> void:
+	if is_instance_valid(pilot) and pilot.ragdoll != null:
+		return     # pilot öldü
 	if not _near_cockpit():
 		hud.show_message("Uçağa binmek için kokpitin yanına git")
 		return
@@ -501,33 +536,50 @@ func _on_cockpit_lost() -> void:
 # ------------------------------------------------------------------ hedefler
 
 var enemy: Vessel
+## Çift çağrıldıysa liderin kanat adamı
+var enemy_wing: Vessel
 
 
 ## Havaalanının kuzeyinde 2 km irtifada tur atan düşman Kartal. Başta pasif hedef;
 ## F7 saldırgan bir avcı çıkarır (füze, top, flare kullanır).
+## --pair: lider + kanat adamı çifti; --enemy_skill=acemi|tecrübeli|as|0..1
 func spawn_enemy(aggressive := false) -> void:
-	if is_instance_valid(enemy):
-		enemy.queue_free()
-	var dir := Vector3(1500.0, Planet.RADIUS, -9000.0).normalized()
-	var pos := Planet.center() + dir * (Planet.RADIUS + 2000.0)
+	for e in [enemy, enemy_wing]:
+		if is_instance_valid(e):
+			e.queue_free()
+	var skill := AIPilot.level(String(Game.args.get("enemy_skill", "0.6")))
+	enemy = _build_enemy(Vector3(1500.0, 2000.0, -9000.0), aggressive, skill)
+	enemy_wing = null
+	if Game.args.has("pair") or Game.args.has("wingtest"):
+		# kanat adamı liderin sağ arkasında (doğuya uçuyorlar: sağ = güney)
+		enemy_wing = _build_enemy(Vector3(1350.0, 2040.0, -8650.0), aggressive, skill)
+		enemy_wing.name = "EnemyWing"
+		AIPilot.pair(enemy, enemy_wing)
+
+
+func _build_enemy(p: Vector3, aggressive: bool, skill: float) -> Vessel:
+	var dir := Vector3(p.x, Planet.RADIUS, p.z).normalized()
+	var pos := Planet.center() + dir * (Planet.RADIUS + p.y)
 	var frame := Planet.local_basis(pos)
 	var heading := Basis(frame.y, deg_to_rad(-90.0)) * frame   # doğuya doğru
 	var ecraft := VesselBuilder.load_craft(CRAFT_PATH)
 	ecraft["paint"] = {"scheme": "çöl", "number": "D-%d" % (10 + randi() % 80)}
-	enemy = VesselBuilder.build(ecraft)
-	enemy.name = "Enemy"
-	enemy.craft_name = "Düşman Kartal"
-	enemy.team = "düşman"
-	enemy.transform = Transform3D(heading, pos)
-	enemy.linear_velocity = -heading.z * 200.0
-	world.add_child(enemy)
-	enemy.set_gear_instant(false)
-	enemy.set_hot()
-	enemy.lights_on = true
+	var e := VesselBuilder.build(ecraft)
+	e.name = "Enemy"
+	e.craft_name = "Düşman Kartal"
+	e.team = "düşman"
+	e.transform = Transform3D(heading, pos)
+	e.linear_velocity = -heading.z * 200.0
+	world.add_child(e)
+	e.set_gear_instant(false)
+	e.set_hot()
+	e.lights_on = true
 	var ai := AIPilot.new()
-	ai.vessel = enemy
+	ai.vessel = e
+	ai.skill = skill
 	ai.aggressive = aggressive or Game.args.has("dogfight")
-	enemy.add_child(ai)
+	e.add_child(ai)
+	return e
 
 
 ## Pistin kuzeyinde, araziye oturtulmuş bir zırhlı araç konvoyu.
@@ -555,6 +607,7 @@ var _ejected := false
 var has_flown := false
 var _pilot_safe := false
 var action_bar: ActionBar
+var time_warp: TimeWarp
 var pod_panel: TargetingPodPanel
 var flight_map: FlightMap
 var _air_time := 0.0
@@ -670,6 +723,9 @@ func eject() -> void:
 	var cockpit := vessel.cockpit() if is_instance_valid(vessel) else null
 	if cockpit == null or not cockpit.occupied or is_instance_valid(pilot):
 		return
+	if not cockpit.can_eject():
+		hud.show_message("Bu kokpitte fırlatma koltuğu yok — pilot indirsin (9) ya da acil iniş yap", 4.0)
+		return
 	if is_instance_valid(autoland):
 		autoland.queue_free()
 		autoland = null
@@ -689,6 +745,7 @@ func eject() -> void:
 	pilot.add_collision_exception_with(vessel)
 	pilot.eject(vessel.linear_velocity + up * 40.0, vessel.global_basis)
 	pilot.landed.connect(_on_pilot_landed)
+	pilot.died.connect(_on_pilot_died)
 	camera.set_eva(pilot)
 	camera.eva_distance = 16.0
 	terrain.collision.target = pilot
@@ -707,11 +764,8 @@ func eject() -> void:
 func _on_pilot_landed(impact: float) -> void:
 	terrain.collision.rebuild_now(terrain.to_local(pilot.global_position))
 	camera.eva_distance = 7.5
-	if impact > 12.0:
-		hud.show_message("%s yere çok sert çarptı (%.0f m/s) — kayıp." % [pilot.pilot_name, impact], 8.0)
-		pilot.enabled = false
-		close_flight(true)
-		_show_report.call_deferred("PİLOT KAYIP", PackedStringArray(["%s paraşüt açılmadan yere çarptı." % pilot.pilot_name, "Fırlatma çok alçakta ya da ters uçarken yapıldı."]), false)
+	if impact > PilotCharacter.FATAL_IMPACT:
+		_pilot_killed(impact, PackedStringArray(["%s paraşüt açılmadan yere çarptı." % pilot.pilot_name, "Fırlatma çok alçakta ya da ters uçarken yapıldı."]))
 		return
 	_pilot_safe = true
 	Crew.award(20, "dayanim")
@@ -719,6 +773,22 @@ func _on_pilot_landed(impact: float) -> void:
 	_send_rescue()
 	if radio:
 		radio.say("%s, sizi görüyoruz, kurtarma helikopteri yolda. Yerinizde kalın." % radio.callsign(), "%s, we have your position, rescue helo inbound." % radio.callsign())
+
+
+## Pilot öldü (ragdoll): mesaj, kadro kaydı; rapor birkaç saniye sonra (beden yere yığılsın).
+func _pilot_killed(impact: float, info: PackedStringArray) -> void:
+	hud.show_message("%s yere çok sert çarptı (%.0f m/s) — kayıp." % [pilot.pilot_name, impact], 8.0)
+	pilot.enabled = false
+	camera.eva_distance = 9.0
+	camera.add_trauma(0.5)
+	close_flight(true)
+	get_tree().create_timer(3.5).timeout.connect(func() -> void:
+		_show_report("PİLOT KAYIP", info, false))
+
+
+## Yürürken yüksekten düşüp ölen pilot.
+func _on_pilot_died(impact: float) -> void:
+	_pilot_killed(impact, PackedStringArray(["%s yüksekten düştü." % pilot.pilot_name]))
 
 
 ## Uçuş bitirilebilir mi: uçak yerde durmuş (pilot içinde) ya da pilot paraşütle inmiş/yerde.

@@ -1,0 +1,21 @@
+{
+	"name": "Sinek V Kuyruklu Keşif",
+	"group": "Deneysel",
+	"description": "İHA görünümlü uzun dayanımlı keşif uçağı: ince uzun gövde, çok uzun düz kanat (planör gibi verimli), arkada J-40 ve iki eğik tam hareketli V kuyruk yüzeyi (yunuslama + sapma kendiliğinden karışır). Burnun altında hedefleme podu. Yavaş ama çok uzun uçar.",
+	"paint": {"scheme": "gri", "number": "U-9"},
+	"parts": [
+		{"part": "nose_cone",      "pos": [0, 0, -4.0]},
+		{"part": "cockpit_low",    "pos": [0, 0, -1.75]},
+		{"part": "tank_long",      "pos": [0, 0, 1.75], "stretch": [0.85, 0.85, 1.0]},
+		{"part": "jet_engine_small", "pos": [0, 0, 4.69]},
+		{"part": "targeting_pod",  "pos": [0, -0.85, -1.2]},
+
+		{"part": "wing_custom",    "pos": [4.15, 0.4, 0.961], "rot": [2, 0, 1], "mirror": true,
+			"wing": {"span": 7.5, "root": 1.6, "tip": 0.8, "sweep": 2.0, "thick": 0.12, "crank": 0.0, "crank_sweep": 0.0}},
+		{"part": "elevon",         "pos": [6.15, 0.45, 1.95], "mirror": true},
+		{"part": "tail_v",         "pos": [1.35, 1.08, 4.6], "rot": [0, 0, 35], "mirror": true},
+
+		{"part": "gear_nose",      "pos": [0, -0.6, -2.6]},
+		{"part": "gear_main",      "pos": [1.1, -0.6, 1.6], "mirror": true}
+	]
+}

@@ -17,6 +17,7 @@ static func apply_hit(hit: Dictionary, damage: float, velocity: Vector3) -> void
 		var part := v.part_for_shape(hit.get("shape", -1))
 		if part:
 			v.damage_part(part, damage)
+			DamageFx.bullet_hole(part, pos, normal)
 		v.apply_impulse(velocity.normalized() * damage * 0.4, pos - v.global_position)
 		shake_camera(pos, 0.12, 40.0)
 		var cam := (Engine.get_main_loop() as SceneTree).root.get_viewport().get_camera_3d() as FlightCamera
@@ -33,6 +34,14 @@ static func apply_hit(hit: Dictionary, damage: float, velocity: Vector3) -> void
 		Sfx.play_at("impact_metal_%d.ogg" % (1 + randi() % 2), pos, -4.0, randf_range(0.8, 1.0), 900.0)
 		_spark(pos, normal)
 	elif collider is RigidBody3D:
+		if collider is Debris:
+			# düşen enkaza isabet: en yakın parçaya delik
+			var best: Part = null
+			for p: Part in (collider as Debris).parts:
+				if is_instance_valid(p) and (best == null or p.global_position.distance_squared_to(pos) < best.global_position.distance_squared_to(pos)):
+					best = p
+			if best:
+				DamageFx.bullet_hole(best, pos, normal)
 		collider.apply_impulse(velocity.normalized() * damage * 0.4, pos - collider.global_position)
 		_spark(pos, normal)
 	else:
@@ -55,6 +64,8 @@ static func explosion(pos: Vector3, radius: float, max_damage: float, source: Ob
 				if d < radius:
 					var f: float = 1.0 - d / radius
 					v.damage_part(part, max_damage * f * f)
+					if f > 0.25:
+						DamageFx.blast_mark(part, pos, f)
 			var dv := v.com_global().distance_to(pos)
 			if dv < radius * 1.5:
 				v.apply_central_impulse((v.com_global() - pos).normalized() * max_damage * 20.0 * (1.0 - dv / (radius * 1.5)))

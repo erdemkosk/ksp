@@ -25,6 +25,14 @@ var prop := false
 var no_ab := false
 var rocket := false
 var prop_vmax := 150.0
+## Ramjet: sıkıştırıcısı yok, koç basıncıyla çalışır — yavaşken itki ~0, Mach 2–3.5'te en güçlü
+var ramjet := false
+## Darbeli jet: bu Mach'ın üstünde itki hızla düşer (0 = sınır yok)
+var pulse_mach := 0.0
+## İtki yönlendirme (TVC): lüle ±gimbal radyan döner, yunuslama/sapma komutuna tork katar
+var gimbal := 0.0
+var gimbal_cmd := Vector2.ZERO   ## x: lüle yerel X çevresinde, y: yerel Y çevresinde (-1..1)
+var _nozzle: Node3D
 var _prop_node: Node3D
 var _prop_angle := 0.0
 var _prop_disc: Node3D
@@ -50,6 +58,11 @@ func setup(p: Dictionary) -> void:
 	no_ab = p.get("no_ab", false)
 	rocket = p.get("rocket", false)
 	prop_vmax = p.get("prop_vmax", prop_vmax)
+	ramjet = p.get("ramjet", false)
+	pulse_mach = p.get("pulse_mach", 0.0)
+	gimbal = deg_to_rad(p.get("gimbal_deg", 0.0))
+	if ramjet or pulse_mach > 0.0:
+		no_ab = true
 
 
 func on_attached() -> void:
@@ -58,6 +71,7 @@ func on_attached() -> void:
 	_prop_disc = part.get_node_or_null("Visual/PropDisc")
 	_core = part.get_node_or_null("Visual/ExhaustCore")
 	_haze = part.get_node_or_null("Visual/HeatHaze")
+	_nozzle = part.get_node_or_null("Visual/Nozzle")
 	_light = OmniLight3D.new()
 	_light.light_color = Color(1.0, 0.55, 0.25)
 	_light.omni_range = 18.0
@@ -115,6 +129,8 @@ func physics_tick(delta: float) -> void:
 		if not rocket:
 			var dr := clampf(vessel.air_density() / Atmosphere.SEA_LEVEL_DENSITY, 0.02, 1.2)
 			need *= pow(dr, 0.7) * lerpf(0.9, 1.0, minf(dr, 1.0))
+		if ramjet:
+			need *= 0.15 + 0.85 * smoothstep(0.3, 1.3, vessel.mach())   # yavaşken az yakıt, az itki
 		ratio = vessel.draw_fuel(need) / need
 		if part.submerged > 0.5 or ratio < 0.5:
 			state = State.OFF   # su altında ya da yakıt bitince söner
@@ -133,11 +149,17 @@ func physics_tick(delta: float) -> void:
 			# pervane: statik itki yüksek, hız arttıkça düşer
 			var s := vessel.airspeed() / prop_vmax
 			ram = clampf(1.0 - s * s * 0.85, 0.08, 1.0)
+		var ram_floor := 0.2
+		if ramjet:
+			ram = ramjet_factor(m)
+			ram_floor = 0.0
+		elif pulse_mach > 0.0:
+			ram = clampf(1.0 - pow(m / pulse_mach, 4.0) * 0.9, 0.05, 1.0)
 		# hava alığı yetersizse motor boğulur
 		intake = lerpf(intake, vessel.intake_ratio(), minf(delta * 5.0, 1.0))
 		if rocket:
 			intake = 1.0
-		thrust = max_thrust * throttle * lerpf(1.0, AFTERBURNER_THRUST, afterburner) * ratio * pow(density_ratio, 0.7) * maxf(ram, 0.2) * intake * lerpf(0.45, 1.0, part.health_ratio())   # hasarlı motor güç kaybeder
+		thrust = max_thrust * throttle * lerpf(1.0, AFTERBURNER_THRUST, afterburner) * ratio * pow(density_ratio, 0.7) * maxf(ram, ram_floor) * intake * lerpf(0.45, 1.0, part.health_ratio())   # hasarlı motor güç kaybeder
 		# ağır hasarlı motor tekler: anlık itki kaybı
 		if part.health_ratio() < 0.3:
 			vessel.failures["eng%d" % part.get_instance_id()] = "MOTOR TEKLİYOR"
@@ -146,8 +168,32 @@ func physics_tick(delta: float) -> void:
 		if _sputter > 0.0:
 			_sputter -= delta
 			thrust *= 0.15
-	vessel.add_force_at(-part.global_basis.z * thrust, part.global_position)
-	part.aero_load += -part.global_basis.z * thrust
+	var dir := -part.global_basis.z
+	if gimbal > 0.0:
+		var target := _gimbal_target() if running else Vector2.ZERO
+		gimbal_cmd = gimbal_cmd.move_toward(target, delta * lerpf(0.6, 4.0, vessel.hydraulics))
+		dir = part.global_basis * (Basis.from_euler(Vector3(gimbal_cmd.x, gimbal_cmd.y, 0.0) * gimbal) * Vector3.FORWARD)
+	vessel.add_force_at(dir * thrust, part.global_position)
+	part.aero_load += dir * thrust
+
+
+## Ramjet itki çarpanı Mach'a göre: Mach 0.35 altında yok, 1.3'te tam, 3'te ~1.9 kat, 3.6 üstü düşer.
+static func ramjet_factor(m: float) -> float:
+	return maxf(smoothstep(0.35, 1.3, m) * (1.0 + 0.9 * clampf((m - 1.3) / 1.7, 0.0, 1.0)) - maxf(m - 3.6, 0.0) * 1.2, 0.0)
+
+
+## Lülenin istenen açısı: yunuslama / sapma (ve gerekirse yatış) komutuna en çok tork veren yön.
+## Yerel X çevresinde +a dönüş itkiyi +Y'ye, yerel Y çevresinde +b dönüş -X'e eğer.
+func _gimbal_target() -> Vector2:
+	var desired := Vector3(vessel.ctrl_pitch, -vessel.ctrl_yaw, -vessel.ctrl_roll)
+	if desired.is_zero_approx():
+		return Vector2.ZERO
+	var r := part.position - vessel.com_local
+	var ta := r.cross(part.basis.y)
+	var tb := r.cross(-part.basis.x)
+	var a := clampf(desired.dot(ta.normalized()) * 1.5, -1.0, 1.0) if ta.length() > 0.05 else 0.0
+	var b := clampf(desired.dot(tb.normalized()) * 1.5, -1.0, 1.0) if tb.length() > 0.05 else 0.0
+	return Vector2(a, b)
 
 
 ## Alevin görünürlüğü: çalışırken, ya da marşta ateşleme anından sonra.
@@ -170,7 +216,14 @@ func _process(_delta: float) -> void:
 		if _prop_disc:
 			_prop_disc.visible = n2 > 0.12
 			_prop_disc.scale = Vector3.ONE * (0.9 + 0.1 * n2)
+	if gimbal > 0.0:
+		var tilt := Vector3(gimbal_cmd.x, gimbal_cmd.y, 0.0) * gimbal
+		for n in [_nozzle, _outer, _core, _haze]:
+			if n:
+				n.rotation = tilt
 	var power := maxf(clampf(thrust / max_thrust, 0.0, 1.5), flame_level() * 0.3)
+	if ramjet:
+		power = maxf(power, flame_level() * 0.3 * smoothstep(0.2, 1.0, vessel.mach() if vessel else 0.0))
 	var dry := clampf(power, 0.0, 1.0)
 	# kuru güçte kısa, soluk alev; afterburner'da uzun turuncu alev ve şok elmasları
 	if _outer:

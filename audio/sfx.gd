@@ -66,6 +66,41 @@ static func play_ui(name: String, volume_db := 0.0, pitch := 1.0) -> void:
 	p.finished.connect(p.queue_free)
 
 
+## Hazır bir akışı (ör. Synth sesi) 2B tek seferlik çal.
+static func play_ui_stream(s: AudioStream, volume_db := 0.0, pitch := 1.0, bus := BUS_UI) -> void:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or s == null:
+		return
+	var p := AudioStreamPlayer.new()
+	p.stream = s
+	p.volume_db = volume_db
+	p.pitch_scale = pitch
+	p.bus = bus
+	p.autoplay = true
+	tree.root.add_child.call_deferred(p)
+	p.finished.connect(p.queue_free)
+
+
+## Hazır bir akışı dünyada bir noktada 3B tek seferlik çal.
+static func play_stream_at(s: AudioStream, pos: Vector3, volume_db := 0.0, pitch := 1.0, max_distance := 2000.0) -> void:
+	var root := FloatingOrigin.world_root
+	if root == null or s == null:
+		return
+	var p := AudioStreamPlayer3D.new()
+	p.stream = s
+	p.volume_db = volume_db
+	p.pitch_scale = pitch
+	p.unit_size = 15.0
+	p.max_distance = max_distance
+	p.bus = world_bus()
+	p.attenuation_filter_cutoff_hz = 4000.0
+	p.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_PHYSICS_STEP
+	p.position = pos
+	p.autoplay = true
+	root.add_child.call_deferred(p)
+	p.finished.connect(p.queue_free)
+
+
 static func click() -> void:
 	play_ui("switch_%d.ogg" % (2 + randi() % 3), -6.0, randf_range(0.95, 1.08))
 

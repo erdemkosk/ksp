@@ -22,13 +22,14 @@ Godot_v4.7.2-stable_win64.exe --path .
 | Sağ tık + sürükle · tekerlek · orta tık | etrafa bak · zoom · sıfırla |
 | Sol tık (kokpit) | kokpit anahtarlarını kullan |
 | Sağ tık (parça, dış kamera) | KSP gibi parça penceresi: sağlık, yük, motor/yakıt/kanat/takım durumu ve düğmeleri |
-| Space · V · O | ateş · silah seç (top / füze / bomba) · flare at |
+| Space · V · O | ateş · silah seç (top / IR füze / radar füze / bomba / lazer bomba) · flare + chaff at |
 | F4 · sol tık (hedef kutusu / radar) | radar hedefi seç — füze arayıcısı önce ona kilitlenir |
-| 1-9 | **eylem paneli** (sol alt): fren paraşütü aç/kes, hava freni, takım, fişek, motor, kanopi, pilot indirsin, uçuşu bitir |
+| 1-9 | **eylem paneli** (sol alt), her eylemin sabit tuşu: 1 takım · 2 motor · 3 kanopi · 4 fişek · 5 hava freni · 6 fren paraşütü · 7 JATO · 8 hedefleme podu · 9 pilot indirsin · 0 yakıt boşalt (uçakta olmayanlar boş kalır, numaralar kaymaz) · Enter uçuşu bitir |
 | ⌫ ⌫ (iki kez) | **fırlatma koltuğu** |
 | F2 | telsiz: kalkış / iniş izni, en yakın meydana yön, hava durumu, mayday, pilot indirsin |
 | M | bölge haritası (tekerlek yakınlaştırır) |
 | F9 · F10 | uçuşu kaydet · kayıttan devam (ana menüde "Devam et") |
+| , · . · / | zaman ileri sarma (sağ üst): x1–x4 her zaman, x10–x25 yalnız sakin seyirde (600 m+, düz uçuş, tehdit yok); tehlikede kendiliğinden düşer |
 | F7 | saldırgan düşman avcı çıkar |
 | F5 · F6 · , / . | hava durumu · saat atla · zaman hızı |
 | R / H | piste dön / havada başla |
@@ -45,8 +46,79 @@ Godot_v4.7.2-stable_win64.exe --path .
   dayanım, menzil, yakıt bitince ağırlık merkezinin kayması.
 
 ## Düşmanlar ve yeni görevler
-- **SAM rampası**: 9 km, yerden 120 m üstü ve görüş hattında radar kilitlenir, 3.5 sn sonra füze atar. Alçak
-  uçuş (arazi maskeleme), flare ve sert dönüş kurtarır. Haritada menzil çemberi görünür.
+- **SAM rampası**: 9 km, yerden 120 m üstü ve görüş hattında radar kilitlenir, 3.5 sn sonra radar komutlu
+  füze atar. Füze rampa radarı izi tuttukça güdülür: alçak uçuş (arazi maskeleme) ya da rampaya dik uçuş
+  (çentik) izi koparır, chaff füzenin kilidini düşürebilir. Haritada menzil çemberi görünür.
+
+## Biçim: ayarlanabilir kanat, gövde esnetme, yeni gövde parçaları
+- **Ayarlanabilir Kanat** (kanat kategorisi): takıp sağ tıkla → hazır biçimler (**Delta, Kırık delta, Ok
+  kanat, Trapez, Düz kanat, Ters ok, Uçan kanat**) ve kaydırıcılar: açıklık, kök / uç veteri, ok açısı,
+  kırılma noktası ve iç ok açısı, kalınlık, dihedral. Alan, en-boy oranı, stall açısı, kütle ve dayanım
+  biçimden hesaplanır; kaldırma kuvveti ortalama veterin çeyreğine uygulanır (delta / ters ok kaldırma
+  merkezini gerçekten kaydırır, hangardaki mavi top da). Açıklık değişince kanat kökü yerinde kalır.
+- **Gövde esnetme** (gövde, motor, sensör): sağ tık → Uzunluk / Genişlik / Yükseklik (×0.4–3) ve hazır
+  kesitler (Yuvarlak, Oval, Yassı, Dar-uzun). Uzayan parçanın arkasındakiler geriye, genişleyenin
+  yanındakiler dışarı itilir. Kütle ve yakıt hacimle, ön alan ve itki kesitle değişir.
+- Yeni parçalar: **LERX**, **V Kuyruk Yüzeyi** (tam hareketli; yunuslama + sapma kendiliğinden karışır),
+  **Gövde Altı Kanatçığı**, **Balon / Çerçeveli / Alçak kokpit**, **Keskin Burun** (elmas kesit),
+  **Taşıyıcı Gövde** (geniş, basık, kaldırma üretir), **Sırt Kamburu**, **Gövde Altı Kaportası**,
+  **Kuyruk Kirişi** (çift kirişli tasarımlar), **Kanat Ucu Yakıt Tankı**.
+- Yükleme önizlemesinde uçak gölgesi düşen bir zemin üstünde döner.
+
+## Hazır uçaklar (Hangar → Yükle)
+Liste gruplu; bir uçağın üzerine gelince sağda dönen 3B önizlemesi, açıklaması, kütle / yakıt / itki-ağırlık
+ve donanım özeti görünür. Kaydettiğin uçaklar **Benim uçaklarım** grubunda.
+- **Avcı**: Kartal-1 · Kartal-2S Sessiz Avcı (IRST, kanat ucu füzeleri) · Kartal-2E Elektronik Harp (RF-1,
+  ECM, askılar) · Atmaca İkiz Motorlu Avcı (ikiz motor adaptörü, 4 RF-1, ECM — deneysel denge)
+- **Saldırı**: Şahin-B · Şahin-L Lazer Saldırı (4 LGB + hedefleme podu) · Doğan Hafif Saldırı (askılı bomba, ECM)
+- **Destek & Nakliye**: Katır · Kartal-2R Uzun Menzil (ikmal probu, askılı harici tanklar)
+- **Sivil**: Kırlangıç · Turna
+- Farklı silüetler: **Serçe** (Mirage tipi kuyruksuz delta) · **Çaylak** (Gripen tipi kanard + kırık delta) ·
+  **Arı** (F-5 tipi kısa avcı, ikiz J-40, kısaltılmış tank) · **Leylek** (OV-10 tipi çift kirişli, iki pervane) ·
+  **Yarasa** (uçan kanat, taşıyıcı gövde) · **Berkut** (ters ok) · **Sinek** (V kuyruklu uzun kanatlı keşif)
+
+## Askılar, sensörler, karşı tedbirler, ikmal
+- **Askı Noktası (pylon)**: kanadın / gövdenin altına tak. Elde silah, pod ya da harici tank varken boş
+  askıların ucunda yeşil top çıkar; yaklaştırınca yük askıya oturur (simetri açıksa karşı askıya da).
+- **LGB-250 Lazer Güdümlü Bomba**: V ile **LGB**. Hedefleme podunu (F8) hedefe kilitle; HUD'da **L** işareti,
+  güdümsüz düşüş noktası ve "BIRAKMA BÖLGESİ" görünür. Bomba podun işaretine süzülür; pod kilidi düşüş
+  boyunca sürmeli. Pod yoksa güdümsüz düşer (hangar uyarır).
+- **ECM Karıştırıcı Pod**: düşman arama radarları ve SAM seni ~%55 menzilde bulur, radar füzeleri uzaktayken
+  kilidi kaybedebilir (3.5 km altında radar gürültüyü yener). Bedeli: yayın yaparsın — düşman seni çok
+  uzaktan fark eder, RWR'da **J** görünür. Parça penceresinden açılıp kapanır.
+- **IRST Kızılötesi Arayıcı** (gövde üstüne): radar açmadan ısıyla hedef bulur; temaslar HUD'da turuncu
+  **IR** halkası. F4 ile seçilen IRST hedefi IR füze arayıcısının önceliğidir. Radar yayını savaş panelindeki
+  radar ekranının üst şeridine tıklayarak (ya da radar parça penceresinden) kapatılır: **SESSİZ** — düşman
+  RWR'ı seni görmez, IRST çalışmaya devam eder. Radar füzesi için radar açık olmalı.
+- **İkiz Motor Adaptörü**: gövdenin arkasına; arkasında yan yana iki motor yuvası (yeşil top) çıkar.
+- **Havada İkmal Probu** (burnun yanına / üstüne) ve **Havada İkmal** görevi (★★): tankerin arkasındaki
+  sepete probu ≤ 6 m/s ile sok, pozisyonu koru (55 kg/s), 1500 kg al ve üsse dön.
+- **Sınır Tabaka Ayırıcı**: yan / alt alığın yanına; alık alanına +%10, yüksek hücum açısında daha az kayıp.
+- **Kanat Ucu IR Füze Rayı**: kanadın uç yüzüne takılır, IR füze taşır; winglet gibi uç plakası etkisi
+  (o kanadın indüklenen direnci −%18). Winglet de artık bu etkiyi verir.
+
+## Motor türleri
+- **RJ-30 Ramjet**: sıkıştırıcısı yok, koç basıncıyla çalışır — Mach 0.35 altında itki yok, Mach 1.3'te
+  tam, Mach 3'te ~1.9 kat; Mach 3.6 üstünde düşer. Kendi alığı var, AB yok. Kalkış için yanına başka motor
+  ya da JATO gerekir.
+- **J-100V Vektörel İtki (TVC)**: lüle ±15° döner, yunuslama / sapma komutuna tork katar (yavaşta ve
+  yüksek hücum açısında da kumanda). Hidrolik basınç düşünce lüle yavaşlar.
+- **PJ-1 Darbeli Jet**: ucuz ve hafif (15 kN), ama Mach 0.7 üstünde itki hızla düşer.
+- **JATO-1 Kalkış Roketi** (gövde yüzeyine): eylem panelinden **JATO ateşle** — 10 sn 30 kN, kısılamaz,
+  tekrar yakılamaz; bitince ölü ağırlık. Ağır yüklü kısa kalkış için.
+- Test: `-- --enginetest` (itki–Mach tablosu, TVC torku, JATO yanması).
+
+## Radar füzesi ve RWR
+- **RF-1 Radar Füzesi** (silah, Ar-Ge): radarlı uçakta F4 / tıkla seçilen hedefe (ya da burna en yakın
+  radar temasına) 1–16 km'den atılır; kilit yoksa atış olmaz. Uçağın radarı hedefi izledikçe veri bağıyla
+  güdülür (HUD: "VERİ BAĞI — hedefi radarda tut"), 7 km'ye girince kendi radarını açar ("AKTİF"), sonra
+  bağımsızdır. İz koparsa son bilinen konuma uçar ve oraya varınca kendi arar. Kokpit HUD'unda sağda
+  atış menzili çubuğu (DLZ). Düşman **Şahin-B** iki radar füzesi taşır.
+- **RWR** (radar uyarı alıcısı, PFD'nin sağında): seni tarayan / kilitlenen radarları yönüyle gösterir —
+  **S** SAM, **F** avcı, **M** kendi radarı açık füze. Yeşil = arama, sarı ◇ = kilit (bip), kırmızı yanıp
+  sönen = atış. Merkeze yakın = daha tehlikeli.
+- Radar füzesine karşı: füzeye dik dön (çentik — Doppler hızın sıfıra iner), alçal (arazi), **O** ile
+  fişek+chaff at. Isı fişekleri IR füzeleri, chaff radar füzelerini şaşırtır (aynı fişeklik ikisini de atar).
 - **Uçaksavar topu**: 3 km, öncül nişanlı izli seriler. **Konvoy**: yolda ilerleyen kamyon ve zırhlılar.
 - **Saldırı helikopteri**: alçakta devriye, yaklaşan uçağa dönüp ateş eder; vurulunca dönerek düşer.
 - Düşman **Şahin-B** (ağır avcı / bombardıman) ve Kartal karışık gelir.
@@ -80,6 +152,12 @@ serbest uçuşta sivil trafik (radarda gri).
 - Kokpit iç yüzeylerinde panel dikişleri, vidalar ve kokpit ışığıyla aydınlanan etiketler; avcıda konsol
   anahtar sıraları, dikiz aynaları, çizgili fırlatma kolu; sivilde tavan paneli ve güneşlikler.
 - Pilot modeli profilli gövde, incelen uzuvlar, botlar; uçağa biniş ve iniş tırmanma animasyonu.
+- Pilot ayrıntıları: kıvrımlı / dikişli kumaş (shader), omuz-dirsek-kalça-diz eklemleri, G-elbisesi
+  torbaları, can yeleği cepleri ve telsiz, paraşüt kemer takımı ve Koch kilitleri, diz tahtası, yamalar;
+  altın tonlu vizörlü kask (kulaklık, ense koruması, pilota göre renk şeridi), maske ve halkalı oksijen
+  hortumu; iki boğumlu parmaklı eldivenler, konçlu botlar.
+- **Ragdoll**: paraşüt açılmadan yere çarpan ya da yürürken yüksekten (>12 m/s) düşen pilot eklemli
+  bedene dönüşür (boyun, omuz, dirsek, kalça, diz açı sınırlı), yuvarlanıp yığılır; rapor 3.5 sn sonra açılır.
 
 ## Hedefleme podu (F8)
 - **Hedefleme Podu (FLIR/TV)** parçası (sensör, Ar-Ge; Şahin-B'de takılı): podun döner optik başlığından canlı
@@ -112,7 +190,8 @@ yaklaştırınca oraya yapışır. Takılı parçaya **sağ tık** → parça pe
 Kopyala, Sil). **Sol tık** yerleştir
 (Shift: seçim kalsın), takılı parçaya **sol tık** tutup taşır, **sağ tık / Del** siler. **Shift+tekerlek** ya da
 **[ ]** gövde, motor, kanat ve kontrol yüzeylerini 0.5×–2× boyutlandırır (kütle, itki, yakıt, alan
-ölçekle değişir). **Ctrl+Z / Ctrl+Y** geri al / yinele, **Ctrl+S** kaydet, **F** kamerayı ortalar. Gövde parçaları (kokpit, tank, motor,
+ölçekle değişir). **Ctrl+Z / Ctrl+Y** geri al / yinele, **Ctrl+S** kaydet, **F** kamerayı ortalar,
+**F1** tüm kısayolları gösterir. Gövde parçaları (kokpit, tank, motor,
 radom) uç uca eksen boyunca takılır; kanatlar yan yüzeye yatay, üst yüzeye dikey kuyruk olarak;
 iniş takımı ve silahlar alta. **X** simetri, **R** döndür. Sağ panel: kütle, itki/ağırlık, kanat
 alanı, tahmini stall hızı, maliyet ve kararlılık payı — **sarı** top ağırlık merkezi, **mavi** top
@@ -188,7 +267,7 @@ yan / burun hava alığı, kanard, ok kanat, dikey kuyruk. Örnek uçaklar: **K�
 - **G sınırlayıcı** (Ayarlar, varsayılan açık): kumanda, pilotun dayanabileceği G'yi aşacak kadar
   çekilemez — yüksek hızda S'ye tam basmak pilotu bayıltmaz. Kumanda yetkisi hıza göre yumuşakça ayarlanır
   ve yunuslama sönümleyici burnun ileri geri sallanmasını önler (akıcı çekiş). Kapatılırsa bayılma gerçekçi süreyle gelir.
-- **Fırlatma koltuğu** (⌫ iki kez ya da eylem panelinde FIRLAT'a iki tık): kanopi atılır, pilot
+- **Fırlatma koltuğu** (⌫ iki kez ya da eylem panelinde FIRLAT'a iki tık; **yolcu uçağı burun kokpitinde yok**): kanopi atılır, pilot
   ~40 m/s fırlar, 1.3 sn sonra paraşüt açılır (≈7 m/s alçalma, A/D W/S ile yönlendirilir). Kamera
   pilotu izler; uçak düşse de pilot kurtulur ve tecrübe kazanır. Paraşüt açılmadan yere çarpan pilot
   (çok alçakta / ters fırlatma) kayıp olur.

@@ -16,13 +16,24 @@ var _press_valid := false
 var _hover: Part
 var _hover_mat: StandardMaterial3D
 var _open_mat: StandardMaterial3D
+var _last_mouse := Vector2(-1, -1)
+var _hover_cd := 0.0
+var _label: Label
 
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hover_mat = _overlay(Color(0.3, 0.65, 1.0, 0.28))
+	_hover_mat = _overlay(Color(0.35, 0.75, 1.0, 0.45))
 	_open_mat = _overlay(Color(0.3, 1.0, 0.55, 0.22))
+	_label = Label.new()
+	_label.theme = UiTheme.get_theme()
+	_label.add_theme_font_size_override("font_size", 14)
+	_label.add_theme_color_override("font_color", Color(0.75, 0.9, 1.0))
+	_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	_label.add_theme_constant_override("outline_size", 5)
+	_label.visible = false
+	add_child(_label)
 	if Game.args.has("partwin"):
 		demo_open.call_deferred()
 
@@ -71,11 +82,21 @@ func _part_at(mouse: Vector2) -> Part:
 	return (hit.collider as Vessel).part_for_shape(hit.shape)
 
 
-func _process(_delta: float) -> void:
-	# üzerine gelme vurgusu
-	var h: Part = null
-	if _active() and get_viewport().gui_get_hovered_control() == null:
-		h = _part_at(get_viewport().get_mouse_position())
+func _process(delta: float) -> void:
+	# üzerine gelme vurgusu: üçgen hassas seçim pahalı, yalnız fare kıpırdayınca (saniyede ≤12)
+	var h: Part = _hover
+	var mp := get_viewport().get_mouse_position()
+	_hover_cd -= delta
+	if not _active() or Input.mouse_mode != Input.MOUSE_MODE_VISIBLE or get_viewport().gui_get_hovered_control() != null:
+		h = null
+	elif _hover_cd <= 0.0 and mp.distance_to(_last_mouse) > 1.0:
+		_hover_cd = 0.08
+		_last_mouse = mp
+		h = _part_at(mp)
+	_label.visible = is_instance_valid(h)
+	if _label.visible:
+		_label.text = h.title + "  ·  sağ tık"
+		_label.position = mp + Vector2(18, 10)
 	if h != _hover:
 		_set_overlay(_hover, _open_mat if _windows.has(_hover) else null)
 		_hover = h
@@ -115,6 +136,12 @@ func _toggle(part: Part) -> void:
 		elif m is LandingGearModule and not buttons.has("gear"):
 			buttons["gear"] = _button(row, "Takım", func() -> void:
 				part.vessel.gear_down = not part.vessel.gear_down)
+		elif m is EcmModule:
+			buttons["ecm"] = _button(row, "ECM", func() -> void:
+				m.enabled = not m.enabled)
+		elif m is RadarModule:
+			buttons["radar"] = _button(row, "Radar", func() -> void:
+				part.vessel.radar_on = not part.vessel.radar_on)
 	w.closed.connect(func() -> void: _close(part))
 	add_child(w)
 	var mouse := get_viewport().get_mouse_position()
@@ -196,9 +223,23 @@ func _refresh(part: Part, d: Dictionary) -> void:
 			lines.append("Top    %d mermi" % m.ammo)
 		elif m is MissileModule:
 			var tgt: String = "  · hedef: " + m.target.craft_name if m.loaded and is_instance_valid(m.target) else ""
-			lines.append("Füze   %s%s" % ["HAZIR" if m.loaded else "ATILDI", tgt])
+			lines.append("%s   %s%s" % ["Radar füze" if m.radar_guided else "IR füze", "HAZIR" if m.loaded else "ATILDI", tgt])
 		elif m is RadarModule:
-			lines.append("Radar  %d km · %d temas%s" % [m.range_m / 1000.0, m.contacts.size(), "" if v.has_power() else " · GÜÇ YOK"])
+			lines.append("Radar  %d km · %d temas%s%s" % [m.range_m / 1000.0, m.contacts.size(), "" if v.has_power() else " · GÜÇ YOK", "" if v.radar_on else " · SESSİZ"])
+			var rb: Button = d["buttons"].get("radar")
+			if rb:
+				rb.text = "Radarı kapat (sessiz)" if v.radar_on else "Radarı aç"
+		elif m is EcmModule:
+			lines.append("ECM    %s" % ("KARIŞTIRIYOR" if m.active() else ("KAPALI" if not m.enabled else "GÜÇ YOK / HASARLI")))
+			var eb: Button = d["buttons"].get("ecm")
+			if eb:
+				eb.text = "ECM kapat" if m.enabled else "ECM aç"
+		elif m is IrstModule:
+			lines.append("IRST   %d km · %d ısı teması" % [m.range_m / 1000.0, m.contacts.size()])
+		elif m is RefuelProbeModule:
+			lines.append("Prob   %s · alınan %d kg" % ["BAĞLI" if m.connected() else "hazır", m.received])
+		elif m is BombModule:
+			lines.append("%s   %s" % ["Lazer bomba" if m.guided else "Bomba", "TAKILI" if m.loaded else "BIRAKILDI"])
 		elif m is CockpitModule:
 			lines.append("Pilot  %s" % ("içeride" if v.has_pilot() else "yok"))
 	(d["info"] as Label).text = "\n".join(lines)
@@ -213,7 +254,15 @@ func _set_overlay(part: Part, mat: Material) -> void:
 	while not stack.is_empty():
 		var n: Node = stack.pop_back()
 		stack.append_array(n.get_children())
+		if n is GPUParticles3D or n is PuffTrail:
+			continue
 		if n is MeshInstance3D and not n.get_parent() is CockpitSwitch:
+			# saydam efektler (alev, ısı dalgası, cam) vurgulanmaz: motorun arkasında yeşil koni çıkıyordu
+			var mo: Material = n.material_override
+			if mo is ShaderMaterial and not mo.has_meta("paint"):
+				continue
+			if mo is StandardMaterial3D and (mo.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED or mo.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED):
+				continue
 			n.material_overlay = mat if mat else part.damage_overlay
 
 
