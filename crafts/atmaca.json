@@ -19,6 +19,7 @@
 
 		{"part": "wing_delta",      "pos": [2.9, -0.2, 0.9], "mirror": true},
 		{"part": "elevon",          "pos": [2.2, -0.2, 3.8], "mirror": true},
+		{"part": "elevon",          "pos": [3.75, -0.2, 3.66], "mirror": true},
 		{"part": "pylon",           "pos": [2.1, -0.62, 0.3], "mirror": true},
 		{"part": "radar_missile_rail", "pos": [2.1, -1.05, 0.3], "mirror": true},
 		{"part": "radar_missile_rail", "pos": [4.1, -0.52, 1.9], "mirror": true},

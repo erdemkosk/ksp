@@ -133,6 +133,20 @@ func _toggle(part: Part) -> void:
 					m.shutdown()
 				elif not m.start():
 					part.vessel.system_message.emit("Marş için batarya + JFS gerekli"))
+			if not m.prop and not m.rocket:
+				buttons["ab"] = _button(row, "AB", func() -> void: m.no_ab = not m.no_ab)
+			_slider(w.body, "İtki sınırı", m.thrust_limit, func(x: float) -> void: m.thrust_limit = x)
+		elif m is ControlSurfaceModule:
+			# hangi eksene çalışsın (KSP'deki gibi): yunuslama / yatış / sapma
+			for ax in [["Yunus", 0], ["Yatış", 2], ["Sapma", 1]]:
+				var i: int = ax[1]
+				buttons["axis%d" % i] = _button(row, ax[0], func() -> void:
+					var mask: Vector3 = m.axis_mask
+					mask[i] = 0.0 if mask[i] > 0.5 else 1.0
+					m.axis_mask = mask)
+		elif m is CockpitModule:
+			buttons["canopy"] = _button(row, "Kanopi", func() -> void: m.canopy_open = not m.canopy_open)
+			buttons["lights"] = _button(row, "Işıklar", func() -> void: part.vessel.lights_on = not part.vessel.lights_on)
 		elif m is LandingGearModule and not buttons.has("gear"):
 			buttons["gear"] = _button(row, "Takım", func() -> void:
 				part.vessel.gear_down = not part.vessel.gear_down)
@@ -167,7 +181,9 @@ func _toggle(part: Part) -> void:
 	w.closed.connect(func() -> void: _close(part))
 	add_child(w)
 	var mouse := get_viewport().get_mouse_position()
-	w.position = (mouse + Vector2(24, -40)).clamp(Vector2(8, 60), size - Vector2(270, 260))
+	# katmanın kendi boyutu 0 kalabiliyordu (pencere ekran dışında, -270,-260'ta açılıyordu): ekran boyutu
+	var screen := get_viewport().get_visible_rect().size
+	w.position = (mouse + Vector2(24, -40)).clamp(Vector2(8, 60), screen - Vector2(270, 260))
 	_windows[part] = {"window": w, "info": info, "hp": hp, "stress": stress, "buttons": buttons}
 	_set_overlay(part, _hover_mat if part == _hover else null)   # açık pencere parçayı boyamaz (yeşil iz kalıyordu)
 	_refresh(part, _windows[part])
@@ -211,6 +227,29 @@ func _bar(parent: Control, title: String, color: Color) -> ProgressBar:
 	return b
 
 
+## Yüzde kaydırıcı (%10–100): başlık + değer etiketi.
+func _slider(parent: Control, title: String, value: float, cb: Callable) -> void:
+	var row := HBoxContainer.new()
+	var l := Label.new()
+	l.add_theme_font_size_override("font_size", 12)
+	l.add_theme_color_override("font_color", Color(0.65, 0.72, 0.8))
+	l.custom_minimum_size.x = 120
+	var s := HSlider.new()
+	s.min_value = 0.1
+	s.max_value = 1.0
+	s.step = 0.05
+	s.value = value
+	s.custom_minimum_size.x = 110
+	s.focus_mode = Control.FOCUS_NONE
+	l.text = "%s  %%%d" % [title, value * 100.0]
+	s.value_changed.connect(func(x: float) -> void:
+		l.text = "%s  %%%d" % [title, x * 100.0]
+		cb.call(x))
+	row.add_child(l)
+	row.add_child(s)
+	parent.add_child(row)
+
+
 func _button(parent: Control, text: String, cb: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
@@ -240,6 +279,9 @@ func _refresh(part: Part, d: Dictionary) -> void:
 			var b: Button = d["buttons"].get("engine")
 			if b:
 				b.text = "Motoru durdur" if m.state != EngineModule.State.OFF else "Motoru çalıştır"
+			var ab: Button = d["buttons"].get("ab")
+			if ab:
+				ab.text = "Art yakıcı: KİLİTLİ" if m.no_ab else "Art yakıcı: serbest"
 		elif m is FuelTankModule:
 			lines.append("Yakıt  %d / %d kg%s" % [m.fuel, m.capacity, "  · ATILIYOR" if v.fuel_dumping else ""])
 			var db: Button = d["buttons"].get("dump")
@@ -265,6 +307,10 @@ func _refresh(part: Part, d: Dictionary) -> void:
 				pb.disabled = m.state == 2
 		elif m is ControlSurfaceModule:
 			lines.append("Kanatçık  %+.1f°" % rad_to_deg(m.deflection))
+			for ax in [["Yunus", 0], ["Yatış", 2], ["Sapma", 1]]:
+				var axb: Button = d["buttons"].get("axis%d" % ax[1])
+				if axb:
+					axb.text = ("✓ " if m.axis_mask[ax[1]] > 0.5 else "✗ ") + String(ax[0])
 		elif m is WingModule:
 			lines.append("Kaldırma  %.1f kN%s" % [m.last_lift.length() / 1000.0, "  · STALL" if m.stalled else ""])
 			lines.append("Hücum açısı  %+.1f°" % rad_to_deg(m.last_aoa))
@@ -300,6 +346,12 @@ func _refresh(part: Part, d: Dictionary) -> void:
 				bb.disabled = not m.loaded
 		elif m is CockpitModule:
 			lines.append("Pilot  %s" % ("içeride" if v.has_pilot() else "yok"))
+			var cb2: Button = d["buttons"].get("canopy")
+			if cb2:
+				cb2.text = "Kanopiyi kapat" if m.canopy_open else "Kanopiyi aç"
+			var lb: Button = d["buttons"].get("lights")
+			if lb:
+				lb.text = "Işıkları kapat" if v.lights_on else "Işıkları aç"
 	(d["info"] as Label).text = "\n".join(lines)
 	(d["hp"] as ProgressBar).value = 100.0 * part.health_ratio()
 	(d["stress"] as ProgressBar).value = 100.0 * clampf(part.stress, 0.0, 1.0)

@@ -10,10 +10,103 @@ static var _smoke_mesh: QuadMesh
 static var _splash_mesh: QuadMesh
 
 
+## Patlama: boyut (size ~0.8 füze … 4 ağır bomba) ateş topunu, dumanı, parlamayı ölçekler.
+## Önceden `size` yalnız parçacık sayısını değiştiriyordu: her patlama aynı 3.5 m'lik topu
+## çiziyordu, yüksekten görünmüyordu. Şimdi: parlama ışığı + beyaz çakma, ateş topu, yerdeyse
+## toprak fışkırması ve şok halkası, uzun kalan koyu duman sütunu.
 static func explosion(parent: Node3D, pos: Vector3, up: Vector3, size: float) -> void:
 	_init_resources()
-	_burst(parent, pos, up, _fire_mat, _fire_mesh, int(40 * size), 0.9, size)
-	_burst(parent, pos, up, _smoke_mat, _smoke_mesh, int(30 * size), 4.0, size)
+	var s := clampf(size, 0.5, 6.0)
+	var near_ground := Planet.altitude(pos) - maxf(TerrainGen.height(Planet.surface_dir(pos)), 0.0) < 8.0 * s
+	_flash(parent, pos, s)
+	_burst(parent, pos, up, _fire_mat, _fire_mesh, int(26 + 12 * s), 0.7 + 0.25 * s, s)
+	_burst(parent, pos, up, _smoke_mat, _smoke_mesh, int(18 + 8 * s), 4.0 + 2.0 * s, s * 1.2)
+	if near_ground:
+		dust(parent, pos, up)
+		_burst(parent, pos, up, _debris_mat(), _dust_mesh, int(20 + 10 * s), 1.6 + 0.3 * s, s * 2.5)
+		_ring(parent, pos, up, s)
+
+
+static var _debris: ParticleProcessMaterial
+
+
+## Yer patlamasında yukarı fışkıran toprak ve moloz (yerçekimiyle geri düşer).
+static func _debris_mat() -> ParticleProcessMaterial:
+	if _debris:
+		return _debris
+	_debris = ParticleProcessMaterial.new()
+	_debris.direction = Vector3.UP
+	_debris.spread = 28.0
+	_debris.initial_velocity_min = 10.0
+	_debris.initial_velocity_max = 22.0
+	_debris.gravity = Vector3(0, -12.0, 0)
+	_debris.scale_min = 0.5
+	_debris.scale_max = 1.4
+	_debris.angle_min = -180.0
+	_debris.angle_max = 180.0
+	_debris.color_ramp = _ramp([Color(0.3, 0.25, 0.18, 0.95), Color(0.28, 0.24, 0.18, 0.7), Color(0.35, 0.32, 0.28, 0.0)])
+	return _debris
+
+
+## Kısa beyaz çakma (ışık + parlak küre): uzaktan da görünür, çevreyi bir an aydınlatır.
+static func _flash(parent: Node3D, pos: Vector3, s: float) -> void:
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.75, 0.45)
+	light.light_energy = 10.0
+	light.omni_range = 40.0 * s
+	light.shadow_enabled = false
+	parent.add_child(light)
+	light.global_position = pos
+	var tw := light.create_tween()
+	tw.tween_property(light, "light_energy", 0.0, 0.35 + 0.1 * s).set_ease(Tween.EASE_OUT)
+	tw.tween_callback(light.queue_free)
+	# kameraya dönük yumuşak kenarlı parlak bulut (küre düz soluk bir disk gibi görünüyordu)
+	var ball := MeshInstance3D.new()
+	var qm := QuadMesh.new()
+	qm.size = Vector2(2.0, 2.0)
+	ball.mesh = qm
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	m.albedo_texture = _puff_texture()
+	m.albedo_color = Color(1.0, 0.8, 0.5, 1.0)
+	ball.material_override = m
+	ball.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(ball)
+	ball.global_position = pos
+	ball.scale = Vector3.ONE * 7.0 * s
+	var tb := ball.create_tween().set_parallel(true)
+	tb.tween_property(ball, "scale", Vector3.ONE * 16.0 * s, 0.35).set_ease(Tween.EASE_OUT)
+	tb.tween_property(m, "albedo_color:a", 0.0, 0.35)
+	tb.chain().tween_callback(ball.queue_free)
+
+
+## Yerde genişleyen şok / toz halkası.
+static func _ring(parent: Node3D, pos: Vector3, up: Vector3, s: float) -> void:
+	var mi := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.82
+	tm.outer_radius = 1.0
+	tm.rings = 32
+	tm.ring_segments = 6
+	mi.mesh = tm
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.albedo_color = Color(0.62, 0.56, 0.48, 0.55)
+	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(mi)
+	var ref := Vector3.FORWARD if absf(up.dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT
+	var x := ref.cross(up).normalized()
+	mi.global_transform = Transform3D(Basis(x, up, x.cross(up).normalized()), pos + up * 0.5)
+	mi.scale = Vector3(2.0, 0.6, 2.0) * s
+	var tw := mi.create_tween().set_parallel(true)
+	tw.tween_property(mi, "scale", Vector3(14.0, 0.3, 14.0) * s, 0.9).set_ease(Tween.EASE_OUT)
+	tw.tween_property(m, "albedo_color:a", 0.0, 0.9)
+	tw.chain().tween_callback(mi.queue_free)
 
 
 static func splash(parent: Node3D, pos: Vector3, up: Vector3, size: float) -> void:
@@ -37,7 +130,8 @@ static func _burst(parent: Node3D, pos: Vector3, up: Vector3, mat: ParticleProce
 	# parçacıkların "yukarı"sı yerel gezegen yukarısı olsun
 	var ref := Vector3.FORWARD if absf(up.dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT
 	var x := ref.cross(up).normalized()
-	p.global_basis = Basis(x, up, x.cross(up).normalized())
+	# size düğümü ölçekler: yerel koordinatlı parçacıklar (boyut, hız, yayılma) birlikte büyür
+	p.global_basis = Basis(x, up, x.cross(up).normalized()).scaled(Vector3.ONE * size)
 	p.emitting = true
 	p.finished.connect(p.queue_free)
 
@@ -48,18 +142,18 @@ static func _init_resources() -> void:
 	_fire_mat = ParticleProcessMaterial.new()
 	_fire_mat.direction = Vector3.UP
 	_fire_mat.spread = 70.0
-	_fire_mat.initial_velocity_min = 4.0
-	_fire_mat.initial_velocity_max = 10.0
+	_fire_mat.initial_velocity_min = 7.0
+	_fire_mat.initial_velocity_max = 16.0
 	_fire_mat.gravity = Vector3(0, 2, 0)
 	_fire_mat.damping_min = 4.0
 	_fire_mat.damping_max = 8.0
 	_fire_mat.scale_min = 0.6
 	_fire_mat.scale_max = 1.4
-	_fire_mat.color_ramp = _ramp([Color(1, 0.9, 0.6, 1), Color(1, 0.45, 0.1, 0.8), Color(0.25, 0.08, 0.03, 0)])
+	_fire_mat.color_ramp = _ramp([Color(1, 0.92, 0.65, 1), Color(1, 0.5, 0.12, 0.95), Color(0.22, 0.08, 0.03, 0)])
 	_fire_mat.angle_min = -180.0
 	_fire_mat.angle_max = 180.0
-	_fire_mat.scale_curve = _grow_curve(0.4, 1.3)
-	_fire_mesh = _quad(_billboard_mat(true), 3.5)
+	_fire_mat.scale_curve = _grow_curve(0.9, 1.6)   # ateş topu hemen büyük başlar
+	_fire_mesh = _quad(_billboard_mat(false), 7.0)   # eklemeli değil: gündüz parlak zeminde kayboluyordu
 
 	_smoke_mat = ParticleProcessMaterial.new()
 	_smoke_mat.direction = Vector3.UP
@@ -75,7 +169,7 @@ static func _init_resources() -> void:
 	_smoke_mat.angle_min = -180.0
 	_smoke_mat.angle_max = 180.0
 	_smoke_mat.scale_curve = _grow_curve(0.3, 1.6)
-	_smoke_mesh = _quad(_billboard_mat(false), 6.0)
+	_smoke_mesh = _quad(_billboard_mat(false), 12.0)
 
 	_splash_mat = ParticleProcessMaterial.new()
 	_splash_mat.direction = Vector3.UP

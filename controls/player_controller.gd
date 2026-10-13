@@ -20,6 +20,10 @@ var g_limiter := true
 var _g_per_q := 6.0e-4      ## öğrenilen: (G-1) / (kumanda × dinamik basınç); güvenli taraftan başlar
 var _auth := 1.0
 var _auth_neg := 1.0
+var _prev_g := 1.0
+var _gdot := 0.0
+var _rate_cap := 1.0
+var _auto_trim := 0.0      ## SAS açıkken eller serbest: burnun duruşunu tutan yavaş trim
 var _prev_wx := 0.0
 var _wdot := 0.0
 
@@ -135,8 +139,20 @@ func _physics_process(delta: float) -> void:
 		# (mekanik kumandada SAS basit bir dengeleyici: yarı güçte)
 		var w := vessel.local_angular_velocity()
 		var g_sas := sas_gain * (0.5 if fcs == "mech" else 1.0)
+		# kazanç planlaması: hızlıyken yüzeyler çok etkili, ağır uçakta yavaş hareket eder → sabit
+		# kazanç aşırı düzeltip salınım yapıyordu (Akbaba, Arı eller serbest ±2 G sallanıyordu)
+		var q_sas := 0.5 * vessel.air_density() * vessel.airspeed() * vessel.airspeed()
+		g_sas *= clampf(12000.0 / maxf(q_sas, 1.0), 0.3, 1.0) * clampf(ControlSurfaceModule.response_factor(vessel.mass), 0.5, 1.0)
 		if absf(pitch) < 0.05:
 			pitch = clampf(-w.x * g_sas, -1.0, 1.0)
+			# otomatik trim: eller serbestken burnun duruşunu tutar (yunuslama hızının integrali).
+			# Yalnız sönümleme, ağırlık merkezi kaymış / kararsız uçağı tutamıyordu: burun yavaşça
+			# kalkıp 8 sn'de 1 km tırmanıyordu
+			if not autopilot.any_active() and vessel.airspeed() > 40.0:
+				_auto_trim = clampf(_auto_trim - w.x * 0.8 * delta, -0.6, 0.6)
+			pitch = clampf(pitch + _auto_trim, -1.0, 1.0)
+		if vessel.airspeed() < 40.0:
+			_auto_trim = move_toward(_auto_trim, 0.0, delta)
 		if absf(yaw) < 0.05:
 			yaw = clampf(w.y * g_sas, -1.0, 1.0)
 		if absf(roll) < 0.05:
@@ -156,7 +172,9 @@ func _physics_process(delta: float) -> void:
 		"fbw":
 			vessel.ctrl_pitch = _limit_aoa(_limit_g(clampf(_damp_pitch(pitch, delta) + pitch_trim, -1.0, 1.0), delta))
 		"hydro":
-			vessel.ctrl_pitch = clampf(_damp_pitch(pitch, delta) + pitch_trim, -1.0, 1.0)
+			# sınırlayıcısız ama pilot korumalı: tam çubuk pilotun G sınırına kadar çeker (gri perde),
+			# bayıltacak G'ye çıkmaz. Hücum açısı sınırı yok: stall'a girilebilir.
+			vessel.ctrl_pitch = _limit_g(clampf(_damp_pitch(pitch, delta) + pitch_trim, -1.0, 1.0), delta, g_tolerance() - 0.1)
 		_:
 			var k := _stick_force()
 			vessel.ctrl_pitch = clampf(pitch * k + pitch_trim, -1.0, 1.0)
@@ -301,33 +319,57 @@ func g_tolerance() -> float:
 
 ## Pozitif ve negatif G sınırı: aşılırsa o yöndeki kumanda kazancı hızla düşer, G sınırın
 ## epey altına inince yavaşça geri gelir. Burun yukarı +, aşağı - komut.
-func _limit_g(pitch: float, delta: float) -> float:
+func _limit_g(pitch: float, delta: float, gmax_override := 0.0) -> float:
 	if not g_limiter:
 		return pitch
 	# Kazanç planlaması (gerçek FBW gibi): uçağın kumanda başına ürettiği G, dinamik basınçla
-	# orantılı kabul edilir ve uçuşta yavaşça öğrenilir. Tam çubuk ≈ pilotun G sınırı olacak
-	# şekilde kumanda yetkisi yumuşakça ayarlanır — açıp kapamaz, kumanda akıcı kalır.
+	# orantılı kabul edilir ve uçuşta öğrenilir. Tam çubuk ≈ pilotun G sınırı olacak şekilde
+	# kumanda yetkisi yumuşakça ayarlanır — açıp kapamaz, kumanda akıcı kalır.
 	var g := vessel.g_force
-	var gmax := g_tolerance() - 0.4
+	_gdot = lerpf(_gdot, (g - _prev_g) / maxf(delta, 0.001), 1.0 - exp(-delta / 0.06))
+	_prev_g = g
+	var gmax := gmax_override if gmax_override > 0.0 else g_tolerance() - 0.4
 	if _g_cap > 0.0:
 		gmax = minf(gmax, _g_cap)   # kokpitin yapısal sınırı (ör. yolcu uçağı 2.5 G)
 	var gmin := -(2.2 + 0.3 * Crew.skill("dayanim"))
 	var q := maxf(0.5 * vessel.air_density() * vessel.airspeed() * vessel.airspeed(), 500.0)
 	var eff := vessel.ctrl_pitch
-	if absf(eff) > 0.25 and q > 3000.0:
-		var sample := clampf((g - 1.0) / (eff * q), _g_per_q * 0.5, _g_per_q * 2.0)
-		_g_per_q = clampf(_g_per_q + (sample - _g_per_q) * minf(delta / 0.6, 1.0), 2e-5, 3e-3)
-	var want := clampf((gmax - 1.0) / (_g_per_q * q), 0.08, 1.0)
-	var want_neg := clampf((1.0 - gmin) / (_g_per_q * q), 0.08, 1.0)
-	# sınır aşılıyorsa yetki daha da kısılır (yumuşak)
-	if g > gmax:
-		want *= clampf(1.0 - (g - gmax) * 0.25, 0.3, 1.0)
-	if g < gmin:
-		want_neg *= clampf(1.0 - (gmin - g) * 0.3, 0.3, 1.0)
+	if absf(eff) > 0.15 and q > 3000.0:
+		# çevik uçaklarda (kanard, delta, ters ok) tahmin çok düşük başlıyor: hızlı ve geniş öğren
+		var sample := clampf((g - 1.0) / (eff * q), _g_per_q * 0.33, _g_per_q * 3.0)
+		_g_per_q = clampf(_g_per_q + (sample - _g_per_q) * minf(delta / 0.35, 1.0), 2e-5, 6e-3)
+	var want := clampf((gmax - 1.0) / (_g_per_q * q), 0.03, 1.0)
+	var want_neg := clampf((1.0 - gmin) / (_g_per_q * q), 0.03, 1.0)
+	# öngörülü kesme: G'nin 0.2 sn sonraki tahmini sınırı geçecekse yetki hemen kısılır
+	# (eski hâli yalnız sınır aşılınca, zayıf kısıyordu: çevik uçaklar 11–13 G'ye fırlıyordu)
+	var g_pred := g + maxf(_gdot, 0.0) * 0.2
+	if g_pred > gmax:
+		want *= clampf(1.0 - (g_pred - gmax) * 0.6, 0.05, 1.0)
+	var g_pred_neg := g + minf(_gdot, 0.0) * 0.2
+	if g_pred_neg < gmin:
+		want_neg *= clampf(1.0 - (gmin - g_pred_neg) * 0.6, 0.05, 1.0)
 	# kısarken hızlı, açarken yavaş (aşırı G kaçmasın, kumanda yine akıcı)
 	_auth = lerpf(_auth, want, 1.0 - exp(-delta / (0.07 if want < _auth else 0.35)))
 	_auth_neg = lerpf(_auth_neg, want_neg, 1.0 - exp(-delta / (0.07 if want_neg < _auth_neg else 0.35)))
-	return pitch * (_auth if pitch > 0.0 else _auth_neg)
+	# yunuslama hızı sınırı: dönüşte G ≈ 1 + V·ω/g → izin verilen ω = (gmax-1)·g/V. Öğrenme
+	# gerektirmez ve G'den önce davranır (burun önce döner, G arkadan gelir): çevik uçaklarda
+	# (kanard, delta, ters ok, uçan kanat) G aşımını keser
+	var v := maxf(vessel.airspeed(), 40.0)
+	var wx := vessel.local_angular_velocity().x          # + burun yukarı
+	var w_pred := wx + _wdot * 0.12
+	var w_up := (gmax - 1.0) * 9.81 / v * 1.1
+	var w_dn := (1.0 - gmin) * 9.81 / v * 1.1
+	var cap_up := clampf(1.0 - (w_pred - w_up * 0.92) / (w_up * 0.3), 0.0, 1.0)
+	var cap_dn := clampf(1.0 - (-w_pred - w_dn * 0.92) / (w_dn * 0.3), 0.0, 1.0)
+	_rate_cap = lerpf(_rate_cap, cap_up if pitch > 0.0 else cap_dn, 1.0 - exp(-delta / 0.04))
+	var out := pitch * (_auth if pitch > 0.0 else _auth_neg) * _rate_cap
+	# kararsız uçak (ters ok, küçük kararlılık payı) kumanda sıfırken de burnunu kaldırmaya devam
+	# eder: sınır aşılınca aktif karşı kumanda verilir
+	if w_pred > w_up:
+		out = minf(out, -clampf((w_pred - w_up) / w_up * 1.5, 0.0, 0.6))
+	elif -w_pred > w_dn:
+		out = maxf(out, clampf((-w_pred - w_dn) / w_dn * 1.5, 0.0, 0.6))
+	return out
 
 
 ## Yunuslama sönümleyici: çubuk çekilince uçağın burnu ileri geri sallanmasın (kısa periyot
@@ -376,6 +418,10 @@ func _fcs() -> String:
 		_g_cap = float(c.part.def.get("g_limit", 0.0)) if c else 0.0
 		_stall_deg = _main_wing_stall()
 		_aoa_lim = _stall_deg * 0.9
+		_g_per_q = 6.0e-4   # yeni uçak: G kazancı baştan öğrenilir
+		_auto_trim = 0.0
+		_auth = 1.0
+		_auth_neg = 1.0
 		vessel.system_message.emit("Kumanda sistemi: " + FCS_NAMES.get(kind, kind))
 	return _fcs_kind
 

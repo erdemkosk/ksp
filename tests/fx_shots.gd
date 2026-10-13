@@ -16,6 +16,50 @@ func _ready() -> void:
 	var v: Vessel = main.vessel
 	await get_tree().create_timer(1.0).timeout
 	cam.mode = FlightCamera.Mode.CHASE
+	if Game.args.has("boom"):
+		# 7-8: patlama — uçağın önünde yerde ağır bomba (size 3.5) ve havada füze (1.2)
+		cam.orbit_yaw = 0.0                    # uçağın arkasından ileri bak
+		cam.orbit_elevation = deg_to_rad(8.0)
+		cam.distance = 18.0
+		await get_tree().create_timer(1.0).timeout
+		var up := Planet.up_at(v.global_position)
+		var ahead := v.global_position + v.forward() * 900.0
+		var ground := ahead - up * (Planet.altitude(ahead) - maxf(TerrainGen.height(Planet.surface_dir(ahead)), 0.0))
+		if Game.args.has("boomnear"):
+			if Game.args.has("warm"):
+				Effects.explosion(FloatingOrigin.world_root, v.global_position - v.forward() * 300.0, up, 1.0)
+				await get_tree().create_timer(3.0).timeout
+			var cam3 := get_viewport().get_camera_3d()
+			# uçak ~190 m/sn gider: patlama 450 m önde ve yanda olsun ki 2 sn kadrajda kalsın
+			var near_p := cam3.global_position - cam3.global_basis.z * 260.0 + cam3.global_basis.x * 40.0 + up * 15.0
+			Effects.explosion(FloatingOrigin.world_root, near_p, up, 1.5)
+			for i in 5:
+				await get_tree().create_timer([0.06, 0.15, 0.3, 0.5, 0.6][i]).timeout
+				await _shot(dir + "/near_%d.png" % i)
+				if i == 1:
+					for c in FloatingOrigin.world_root.get_children():
+						if c is GPUParticles3D and c.global_position.distance_to(near_p) < 50.0:
+							print("FX parçacık: konum mesafe=%.1f yayıyor=%s görünür=%s ölçek=%s ömür=%.2f adet=%d kamera=%.0f m aabb=%s" % [
+								c.global_position.distance_to(near_p), c.emitting, c.is_visible_in_tree(), c.global_basis.get_scale(), c.lifetime, c.amount,
+								c.global_position.distance_to(cam3.global_position), c.visibility_aabb])
+			get_tree().quit()
+			return
+		Effects.explosion(FloatingOrigin.world_root, ground, up, 3.5)
+		Effects.explosion(FloatingOrigin.world_root, v.global_position + v.forward() * 250.0 + v.global_basis.x * 70.0 + up * 25.0, up, 1.2)
+		await get_tree().create_timer(0.12).timeout
+		var c3 := get_viewport().get_camera_3d()
+		var air_p := v.global_position + v.forward() * 250.0 + v.global_basis.x * 70.0 + up * 25.0
+		print("FX patlama: yer %s ekranda %s arkada=%s | hava ekranda %s arkada=%s | kök %s" % [ground, c3.unproject_position(ground), c3.is_position_behind(ground), c3.unproject_position(air_p), c3.is_position_behind(air_p), FloatingOrigin.world_root])
+		var n_fx := 0
+		for c in FloatingOrigin.world_root.get_children():
+			if c is GPUParticles3D or c is OmniLight3D:
+				n_fx += 1
+		print("FX dünya kökünde efekt düğümü: %d" % n_fx)
+		await _shot(dir + "/7_boom_flash.png")
+		await get_tree().create_timer(1.2).timeout
+		await _shot(dir + "/8_boom_smoke.png")
+		get_tree().quit()
+		return
 	# 4-5: boya — önce, uçak sağlamken ve hız değiştirmeden (zorlanmış hız uçağı bozabiliyor)
 	cam.orbit_yaw = deg_to_rad(150.0)
 	cam.orbit_elevation = deg_to_rad(22.0)

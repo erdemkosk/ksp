@@ -239,6 +239,14 @@ func _ready() -> void:
 		var et := preload("res://tests/engine_test.gd").new()
 		et.main = self
 		add_child.call_deferred(et)
+	if Game.args.has("partclicktest"):
+		var pct: Node = load("res://tests/partclick_test.gd").new()
+		pct.main = self
+		add_child.call_deferred(pct)
+	if Game.args.has("balancetest"):
+		var bt2: Node = load("res://tests/balance_test.gd").new()
+		bt2.main = self
+		add_child.call_deferred(bt2)
 	if Game.args.has("rampgeartest"):
 		var rg: Node = load("res://tests/ramp_gear_test.gd").new()
 		rg.main = self
