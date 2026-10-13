@@ -71,12 +71,33 @@ const WEAPON_BOMB := 2
 const WEAPON_CARGO := 3
 const WEAPON_RADAR := 4
 const WEAPON_LGB := 5
+const WEAPON_ARM := 6          ## radar avcısı füze
+const WEAPON_CRUISE := 7       ## seyir füzesi
+const WEAPON_SHIP := 8         ## gemi savar füze
+const WEAPON_GLIDE := 9        ## süzülen bomba (GPS)
+const WEAPON_CLUSTER := 10     ## misket bombası
+const WEAPON_HEAVY := 11       ## 1000 kg bomba
+const WEAPON_BAY := 12         ## iç bomba bölmesi (seri bırakma)
 ## Silah kartlarının ve V ile dönüşün sırası
-const WEAPON_ORDER := [WEAPON_GUN, WEAPON_MISSILE, WEAPON_RADAR, WEAPON_BOMB, WEAPON_LGB, WEAPON_CARGO]
+const WEAPON_ORDER := [WEAPON_GUN, WEAPON_MISSILE, WEAPON_RADAR, WEAPON_ARM, WEAPON_SHIP, WEAPON_CRUISE,
+	WEAPON_BOMB, WEAPON_HEAVY, WEAPON_CLUSTER, WEAPON_LGB, WEAPON_GLIDE, WEAPON_BAY, WEAPON_CARGO]
+const WEAPON_TITLES := {WEAPON_GUN: "TOP", WEAPON_MISSILE: "IR FÜZE", WEAPON_BOMB: "BOMBA", WEAPON_CARGO: "KARGO",
+	WEAPON_RADAR: "RADAR FÜZE", WEAPON_LGB: "LAZER BOMBA", WEAPON_ARM: "RADAR AVCISI", WEAPON_CRUISE: "SEYİR FÜZESİ",
+	WEAPON_SHIP: "GEMİ SAVAR", WEAPON_GLIDE: "SÜZÜLEN BOMBA", WEAPON_CLUSTER: "MİSKET BOMBASI", WEAPON_HEAVY: "1000 KG BOMBA",
+	WEAPON_BAY: "BOMBA BÖLMESİ"}
 ## Radar yayını (kapalıyken düşman RWR'ı seni görmez; IRST pasif çalışmaya devam eder)
 var radar_on := true
 ## Karşı tedbir otomatik programı (füze 4 km'ye girince flare / chaff kendiliğinden)
 var cm_auto := false
+## Haritadan (M, sol tık) seçilen GPS saldırı hedefi: yüzey koordinatı (doğu, güney); yoksa INF
+var strike_xz := Vector2.INF
+
+
+## GPS hedefinin dünya konumu (yerde), yoksa INF.
+func strike_world() -> Vector3:
+	if strike_xz == Vector2.INF:
+		return Vector3.INF
+	return MissionManager.world_point(strike_xz.x, strike_xz.y, MissionManager.ground_height(strike_xz.x, strike_xz.y) + 1.0)
 ## Ateş tetiği (oyuncu/AI yazar)
 var ctrl_fire := false
 ## Kokpitteki otopilot düğmesi
@@ -552,6 +573,15 @@ func total_thrust() -> float:
 	return total
 
 
+## Kanatlardaki en güçlü titreşim (0..1): stall yaklaşırken ve transonik şokta (kamera, ses).
+func wing_buffet() -> float:
+	var b := 0.0
+	for m in modules:
+		if m is WingModule:
+			b = maxf(b, m.buffet)
+	return b
+
+
 func cockpit() -> CockpitModule:
 	for module in modules:
 		if module is CockpitModule:
@@ -800,6 +830,8 @@ func available_weapons() -> Array[int]:
 			kind = m.weapon_kind()
 		elif m is CargoModule:
 			kind = WEAPON_CARGO
+		elif m is BombBayModule:
+			kind = WEAPON_BAY
 		if kind >= 0 and not kind in out:
 			out.append(kind)
 	out.sort_custom(func(a: int, b: int) -> bool: return WEAPON_ORDER.find(a) < WEAPON_ORDER.find(b))
@@ -819,7 +851,7 @@ func cycle_weapon() -> void:
 func bombs_left(guided := false) -> int:
 	var n := 0
 	for m in modules:
-		if m is BombModule and m.loaded and m.guided == guided:
+		if m is BombModule and m.loaded and m.kind == ("lgb" if guided else "normal"):
 			n += 1
 	return n
 
@@ -971,7 +1003,7 @@ func radar() -> RadarModule:
 
 ## Seçili silah türünün adı (HUD için).
 func weapon_name() -> String:
-	return ["TOP", "IR FÜZE", "BOMBA", "KARGO", "RADAR FÜZE", "LAZER BOMBA"][clampi(selected_weapon, 0, 5)]
+	return String(WEAPON_TITLES.get(selected_weapon, "?"))
 
 
 func gun_ammo() -> int:
@@ -986,8 +1018,35 @@ func gun_ammo() -> int:
 func missiles_left(radar_guided := false) -> int:
 	var n := 0
 	for m in modules:
-		if m is MissileModule and m.loaded and m.radar_guided == radar_guided:
+		if m is MissileModule and m.loaded and m.guidance == ("radar" if radar_guided else "ir"):
 			n += 1
+	return n
+
+
+## Bir silah türünün kalan mühimmatı (füze, bomba, bölme; top / kargo için ayrı sayaçlar).
+func ammo_of(kind: int) -> int:
+	match kind:
+		WEAPON_GUN:
+			return gun_ammo()
+		WEAPON_CARGO:
+			return cargo_left()
+	var n := 0
+	for m in modules:
+		if (m is MissileModule or m is BombModule) and m.loaded and m.weapon_kind() == kind:
+			n += 1
+		elif m is BombBayModule and kind == WEAPON_BAY:
+			n += m.bombs
+	return n
+
+
+## Aynı türden toplam askı (dolu + boş) — kart doluluk çubuğu için.
+func ammo_capacity(kind: int) -> int:
+	var n := 0
+	for m in modules:
+		if (m is MissileModule or m is BombModule) and m.weapon_kind() == kind:
+			n += 1
+		elif m is BombBayModule and kind == WEAPON_BAY:
+			n += m.capacity
 	return n
 
 

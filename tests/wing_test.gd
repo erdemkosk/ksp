@@ -70,9 +70,9 @@ func _physics_process(delta: float) -> void:
 			print("  %s araziye girdi t=%.1f (parça=%d)" % [_names[i], _t, x.parts.size()])
 			continue
 		if not _alive(x):
-			var agl := x.radar_altitude() if is_instance_valid(x) else -1.0
+			var agl: float = x.radar_altitude() if is_instance_valid(x) else -1.0
 			# ağır hasarlıyken (parça kaybı) yere düştüyse vurulmuş say; sağlamken çakıldıysa pilot hatası
-			var crashed := agl < 40.0 and agl > -1.0 and x.parts.size() >= 18
+			var crashed: bool = agl < 40.0 and agl > -1.0 and x.parts.size() >= 18
 			_dead[i] = "YERE ÇAKILDI (sağlam!)" if crashed else "VURULDU"
 			print("  %s düştü t=%.1f (%s, yer=%.0f)" % [_names[i], _t, _dead[i], agl])
 			continue
@@ -90,8 +90,13 @@ func _physics_process(delta: float) -> void:
 			if _dead[i] != "" or ai == null:
 				line += " | %s -" % _names[i]
 				continue
-			var d := x.com_global().distance_to(_ships[0].com_global()) if i > 0 and _alive(_ships[0]) else 0.0
+			var d: float = x.com_global().distance_to(_ships[0].com_global()) if i > 0 and _alive(_ships[0]) else 0.0
 			line += " | %s %s yer=%d hız=%d G=%+.1f d=%d p=%d [%s]" % [_names[i], AIPilot.STATE_NAMES[ai.state], x.radar_altitude(), x.airspeed(), x.g_force, d, x.parts.size(), ai.dbg]
+		for mi in Missile.active:
+			var tn: String = mi.target.name if is_instance_valid(mi.target) else "-"
+			var vn: String = mi.victim.name if is_instance_valid(mi.victim) else "-"
+			var sn: String = mi.shooter.name if is_instance_valid(mi.shooter) else "-"
+			line += " | FÜZE %s→%s (hedef %s)" % [sn, vn, tn]
 		print(line)
 	var all_enemy_dead: bool = _dead[1] != "" and _dead[2] != ""
 	if _dead[0] != "" or all_enemy_dead or _t > float(Game.args.get("duration", "90")):

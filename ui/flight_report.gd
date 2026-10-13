@@ -51,26 +51,37 @@ func _ready() -> void:
 	t.add_theme_color_override("font_color", Color(0.45, 1.0, 0.65) if good else Color(1.0, 0.5, 0.4))
 	box.add_child(t)
 	for l in lines:
+		if l.begins_with("MADALYA") or l.begins_with("TERFİ"):
+			box.add_child(MedalView.report_line(l))   # kurdele / apolet ile vurgulu satır
+			continue
 		var lb := Label.new()
 		lb.text = l
 		lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		lb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		if l.begins_with("SEVİYE") or "XP" in l:
 			lb.add_theme_color_override("font_color", Color(1.0, 0.85, 0.45))
+		elif l.begins_with("◆"):
+			lb.add_theme_color_override("font_color", Color(1.0, 0.62, 0.42))   # hikâye satırı (Campaign)
 		box.add_child(lb)
+	# görev kartıyla uçulduysa: tasarım değerlendirmesi (DesignDebrief)
+	if not Game.mission_card.is_empty():
+		box.add_child(DesignDebrief.build(Game.last_result, Game.mission_card))
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 10)
 	box.add_child(row)
 	row.add_child(UiTheme.big_button("Hangar", func() -> void: _go("res://hangar/hangar.tscn"), true))
 	row.add_child(UiTheme.big_button("Tekrar uç", func() -> void: _go("")))
-	row.add_child(UiTheme.big_button("Ana menü", func() -> void: _go("res://menu/main_menu.tscn")))
+	row.add_child(UiTheme.big_button("Ana menü" if Career.sandbox() else "Cephe haritası", func() -> void: _go("res://menu/main_menu.tscn")))
 
 
 func _go(scene: String) -> void:
 	get_tree().paused = false
 	if scene != "":
 		Game.mission = ""
+		Game.mission_card = {}       # hangarda kart hazırlıktan (pending_op) yeniden gelir
+		if not scene.begins_with("res://hangar"):
+			Game.rehearsal = false
 	FloatingOrigin.reset_world()
 	FloatingOrigin.world_root = null
 	Planet.reset()

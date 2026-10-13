@@ -25,6 +25,8 @@ const MODULE_SCRIPTS := {
 	"irst": preload("res://vessel/modules/irst_module.gd"),
 	"refuel_probe": preload("res://vessel/modules/refuel_probe_module.gd"),
 	"splitter": preload("res://vessel/modules/splitter_module.gd"),
+	"bomb_bay": preload("res://vessel/modules/bomb_bay_module.gd"),
+	"tail_turret": preload("res://vessel/modules/tail_turret_module.gd"),
 }
 
 const PAINT := Color(0.56, 0.61, 0.66)
@@ -77,14 +79,71 @@ static func build(craft: Dictionary) -> Vessel:
 	var vessel := Vessel.new()
 	vessel.craft_name = craft.get("name", "İsimsiz")
 	vessel.name = "Vessel"
+	var t0 := Time.get_ticks_usec()
 	for entry: Dictionary in craft.get("parts", []):
 		var sc: float = entry.get("scale", 1.0)
 		for c in entry_copies(entry):
 			_add_part(vessel, entry["part"], c["pos"], c["rot"], c["flip"], sc, entry)
+	var t1 := Time.get_ticks_usec()
 	_add_fillets(vessel)
+	var t2 := Time.get_ticks_usec()
 	_add_pylons(vessel)
+	var t3 := Time.get_ticks_usec()
 	_add_decals(vessel)
+	if Game.args.has("buildprobe"):
+		print("  parçalar %.1f · fileto %.1f · pilon %.1f · çıkartma %.1f ms" % [(t1 - t0) / 1000.0, (t2 - t1) / 1000.0, (t3 - t2) / 1000.0, (Time.get_ticks_usec() - t3) / 1000.0])
+	_apply_weathering(vessel, clampf(float(craft.get("wear", 0.0)), 0.0, 1.0))
 	return vessel
+
+
+## Boya yıpranması (paint.gdshader instance uniform'ları): her boyalı ağa uçağın eskime düzeyi,
+## uçağın ileri/yukarı yönü (ağ uzayında) ve en yakın is kaynağı yazılır. Is kaynakları: jet /
+## roket lüle ağızları ve top namluları. Yeni uçakta is hafif, eskidikçe koyulaşır.
+static func _apply_weathering(v: Vessel, wear: float) -> void:
+	v.set_meta("wear", wear)   # EngineModule: lüle ısı renklerinin kalıcılığı
+	var srcs: Array = []   # [uçak uzayında konum, yarıçap, şiddet]
+	for p in v.parts:
+		var r := maxf(p.size.x, p.size.y)
+		for m in p.modules:
+			if (m is EngineModule and not m.prop) or m is BoosterModule:
+				srcs.append([p.position + p.basis.z.normalized() * p.size.z * 0.5, r * 1.3, 1.0])
+			elif m is GunModule:
+				srcs.append([p.position - p.basis.z.normalized() * p.size.z * 0.5, r * 0.9, 0.85])
+	var soot_k := 0.3 + 0.7 * wear
+	for p in v.parts:
+		var stack: Array[Node] = [p]
+		while not stack.is_empty():
+			var n: Node = stack.pop_back()
+			stack.append_array(n.get_children())
+			var mi := n as MeshInstance3D
+			if mi == null or not (mi.material_override is ShaderMaterial) or not mi.material_override.has_meta("paint"):
+				continue
+			# ağ → uçak uzayı (parça dönüşümü × parça içindeki düğüm zinciri)
+			var xf := Transform3D.IDENTITY
+			var cur: Node = mi
+			while cur != null and cur != v:
+				xf = (cur as Node3D).transform * xf
+				cur = cur.get_parent()
+			var inv := xf.affine_inverse()
+			mi.set_instance_shader_parameter("wear", wear)
+			mi.set_instance_shader_parameter("fwd_m", (inv.basis * Vector3.FORWARD).normalized())
+			mi.set_instance_shader_parameter("up_m", (inv.basis * Vector3.UP).normalized())
+			# ağın merkezine en çok etki eden is kaynağı
+			var center := xf * (mi.get_aabb().get_center() if mi.mesh else Vector3.ZERO)
+			var best: Array = []
+			var best_w := 0.02
+			for s: Array in srcs:
+				var d := (center - (s[0] as Vector3)).length() / float(s[1])
+				var w := float(s[2]) * exp(-d * d * 0.5)
+				if w > best_w:
+					best_w = w
+					best = s
+			if best.is_empty():
+				mi.set_instance_shader_parameter("soot_src", Vector4.ZERO)
+			else:
+				var lpos := inv * (best[0] as Vector3)
+				mi.set_instance_shader_parameter("soot_src", Vector4(lpos.x, lpos.y, lpos.z, float(best[2]) * soot_k))
+				mi.set_instance_shader_parameter("soot_r", float(best[1]) * inv.basis.x.length())
 
 
 static var MIRROR := Transform3D(Basis.from_scale(Vector3(-1, 1, 1)), Vector3.ZERO)
@@ -259,6 +318,7 @@ static func _add_part(vessel: Vessel, id: String, pos: Vector3, rot_deg: Vector3
 	part.size = def.get("size", Vector3.ONE)
 	part.position = pos
 	part.rotation_degrees = rot_deg
+	part.set_meta("flip", mirrored)   # ayna kopya: pervane ters döner (EngineModule)
 
 	var visual := Node3D.new()
 	visual.name = "Visual"
@@ -331,8 +391,11 @@ static func apply_tweaks(part: Part, entry: Dictionary) -> void:
 				m.axis_mask = Vector3(float(a[0]), float(a[1]), float(a[2]))
 			if entry.has("deflect"):
 				m.max_deflection = deg_to_rad(float(entry["deflect"]))
-		elif m is EngineModule and entry.get("no_ab", false):
-			m.no_ab = true
+		elif m is EngineModule:
+			if entry.get("no_ab", false):
+				m.no_ab = true
+			if entry.has("thrust_limit"):
+				m.thrust_limit = clampf(float(entry["thrust_limit"]), 0.1, 1.0)
 
 
 static func _make_mesh(v: Dictionary, cache_key: String) -> MeshInstance3D:
@@ -693,9 +756,9 @@ static func _add_pylons(v: Vessel) -> void:
 	# Asılı parçalar (motor gondolu, pod, ray, harici yük) ve ana takımlar havada durmasın: bağlantı
 	# noktasından yukarı ışın atıp üstteki gerçek yüzeye (kanat altı / gövde) olan boşluğu ölçer,
 	# arayı pilon ya da takım dikmesi uzantısıyla doldurur. Oyuncunun kendi tasarımlarında da çalışır.
+	# aynı uçak tekrar kurulunca (yapay zekâ doğarken) ışın testleri önbellekten: ~25 ms tasarruf
+	_sig = _craft_sig(v)
 	var faces := {}
-	for p in v.parts:
-		faces[p] = _part_faces(p)
 	for p in v.parts:
 		var gear := false
 		var hang: bool = p.def.get("category", "") == "harici"
@@ -704,21 +767,37 @@ static func _add_pylons(v: Vessel) -> void:
 				gear = true
 			elif m is EngineModule or m is TargetingPodModule or m is BombModule or m is MissileModule or m is GunModule:
 				hang = true
+		# gövdenin üstüne oturan parçalar (radar diski, sensör, sırt yükü): altındaki yüzeye dikme
+		if not gear and not hang and p.def.get("mount", "") == "surface" and p.position.y > 0.3:
+			var bu := _cached_box(v, p, faces)
+			if bu.size != Vector3.ZERO:
+				var bottom := Vector3(bu.get_center().x, bu.position.y + 0.02, bu.get_center().z)
+				var gd := _cached_gap(v, p, bottom, Vector3.DOWN, faces)
+				if gd > 0.04 and gd < 2.5:
+					var pl := MeshInstance3D.new()
+					pl.name = "Pylon"
+					var bm := BoxMesh.new()
+					bm.size = Vector3(clampf(bu.size.x * 0.06, 0.12, 0.3), gd + 0.16, clampf(bu.size.z * 0.4, 0.4, 2.5))
+					pl.mesh = bm
+					pl.material_override = material("paint_dark")
+					pl.position = p.transform.affine_inverse() * (bottom - Vector3(0, gd * 0.5, 0))
+					pl.basis = p.basis.inverse()
+					p.add_child(pl)
+			continue
 		if not gear and not hang:
 			continue
-		var own: Array = faces[p]
-		if own.is_empty():
+		var box := _cached_box(v, p, faces)
+		if box.size == Vector3.ZERO:
 			continue
-		var box := _faces_aabb(own)
 		if gear:
 			var top := p.position + Vector3(0, 0.02, 0)
-			var gap := _gap_above(v, p, top, faces)
+			var gap := _cached_gap(v, p, top, Vector3.UP, faces)
 			if gap > 0.03 and gap < 2.5:
 				_add_gear_mount(p, gap + 0.06)
 			continue
 		# gövdenin içine gömülü (eksene yakın, dibi gövdenin içinde) parçalar pilon istemez
 		var top_pt := Vector3(box.get_center().x, box.end.y - 0.02, box.get_center().z)
-		var gap2 := _gap_above(v, p, top_pt, faces)
+		var gap2 := _cached_gap(v, p, top_pt, Vector3.UP, faces)
 		if gap2 < 0.04 or gap2 > 2.5:
 			continue
 		var length := clampf(box.size.z * 0.6, 0.35, 3.5)
@@ -735,6 +814,40 @@ static func _add_pylons(v: Vessel) -> void:
 		mi.basis = p.basis.inverse() * Basis().scaled(Vector3(w, height * 0.5, 1.0))
 		p.add_child(mi)
 
+
+static var _sig := ""
+static var _gap_cache := {}
+
+static func _craft_sig(v: Vessel) -> String:
+	var s := PackedStringArray()
+	for p in v.parts:
+		s.append("%s%s%s%.3f" % [p.part_id, p.position.snapped(Vector3.ONE * 0.001), p.rotation.snapped(Vector3.ONE * 0.001), p.size.x])
+	return str(hash("|".join(s)))
+
+
+static func _cached_gap(v: Vessel, p: Part, from: Vector3, dir: Vector3, faces: Dictionary) -> float:
+	var key := "%s:%d:%s:%s" % [_sig, v.parts.find(p), from.snapped(Vector3.ONE * 0.001), dir]
+	if not _gap_cache.has(key):
+		if _gap_cache.size() > 4000:
+			_gap_cache.clear()
+		_gap_cache[key] = _gap_dir(v, p, from, dir, faces)
+	return _gap_cache[key]
+
+
+static func _cached_box(v: Vessel, p: Part, faces: Dictionary) -> AABB:
+	var key := "%s:%d:box" % [_sig, v.parts.find(p)]
+	if not _gap_cache.has(key):
+		_faces_of(p, faces)
+		_gap_cache[key] = faces[str(p.get_instance_id())]
+	return _gap_cache[key]
+
+
+## Parçanın üçgenleri ve kutusu, ilk gerektiğinde (önbellek isabetinde hiç hesaplanmaz).
+static func _faces_of(p: Part, faces: Dictionary) -> Array:
+	if not faces.has(p):
+		faces[p] = _part_faces(p)
+		faces[str(p.get_instance_id())] = _faces_aabb(faces[p]) if not (faces[p] as Array).is_empty() else AABB()
+	return faces[p]
 
 ## Takım dikmesinin üstüne, kanat altına / gövdeye uzanan sabit bağlantı borusu ve küçük kaporta.
 static func _add_gear_mount(p: Part, len: float) -> void:
@@ -765,6 +878,30 @@ static func _add_gear_mount(p: Part, len: float) -> void:
 	brace.position = Vector3(side * len * 0.22 / s, len * 0.45 / s, 0)
 	brace.rotation = Vector3(0, 0, side * 0.45)
 	vis.add_child(brace)
+
+
+## (from) noktasından (dir) yönünde (yukarı / aşağı) ilk başka-parça yüzeyine olan mesafe; yoksa INF.
+static func _gap_dir(v: Vessel, self_part: Part, from: Vector3, dir: Vector3, faces: Dictionary) -> float:
+	var best := INF
+	for o in v.parts:
+		if o == self_part:
+			continue
+		var tris: Array = _faces_of(o, faces)
+		var ob: AABB = faces[str(o.get_instance_id())]
+		if tris.is_empty() or from.x < ob.position.x or from.x > ob.end.x or from.z < ob.position.z or from.z > ob.end.z:
+			continue
+		for t in range(0, tris.size(), 3):
+			var a: Vector3 = tris[t]
+			var b: Vector3 = tris[t + 1]
+			var c: Vector3 = tris[t + 2]
+			if from.x < minf(a.x, minf(b.x, c.x)) or from.x > maxf(a.x, maxf(b.x, c.x)):
+				continue
+			if from.z < minf(a.z, minf(b.z, c.z)) or from.z > maxf(a.z, maxf(b.z, c.z)):
+				continue
+			var hit: Variant = Geometry3D.ray_intersects_triangle(from, dir, a, b, c)
+			if hit != null:
+				best = minf(best, absf((hit as Vector3).y - from.y))
+	return best
 
 
 ## (from) noktasından yukarı (+y) ilk başka-parça yüzeyine olan mesafe; yoksa INF.

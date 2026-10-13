@@ -68,6 +68,14 @@ func _on_input(event: InputEvent) -> void:
 			_zoom = minf(_zoom * 1.4, 16.0)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_zoom = maxf(_zoom / 1.4, 1.0)
+		elif event.button_index == MOUSE_BUTTON_LEFT and is_instance_valid(main.vessel):
+			# GPS saldırı hedefi: seyir füzesi ve süzülen bomba buraya gider
+			var view := _view()
+			main.vessel.strike_xz = view.position + event.position / _map.size * view.size
+			Sfx.play_ui("lock_tone.ogg", -10.0, 1.3)
+		elif event.button_index == MOUSE_BUTTON_RIGHT and is_instance_valid(main.vessel):
+			main.vessel.strike_xz = Vector2.INF
+			Sfx.play_ui("switch_2.ogg", -10.0, 0.8)
 
 
 static func _build_texture() -> void:
@@ -161,11 +169,30 @@ func _draw_map() -> void:
 	# görev birimleri ve hedef
 	for n in main.world.get_children():
 		if n is GroundTarget:
+			if n.has_meta("hidden") and not n.destroyed:
+				continue      # keşfedilmemiş (omuzdan SAM ekibi)
 			var col := Color(0.6, 0.6, 0.6) if n.destroyed else (Color(1.0, 0.85, 0.3) if n.team != "düşman" else Color(1.0, 0.35, 0.3))
 			var m := _to_map(to_xz(n.global_position), view)
 			if n is SamSite and not n.destroyed:
-				_map.draw_arc(m, SamSite.RANGE / view.size.x * s.x, 0, TAU, 48, Color(1.0, 0.3, 0.25, 0.35), 1.5)
+				_map.draw_arc(m, n.range_m / view.size.x * s.x, 0, TAU, 64, Color(1.0, 0.3, 0.25, 0.35), 1.5)
+			elif n is RadarStation and not n.destroyed and not n.unit_name.begins_with("SAM"):
+				_map.draw_arc(m, n.range_m / view.size.x * s.x, 0, TAU, 64, Color(1.0, 0.75, 0.25, 0.25), 1.0)
+				_map.draw_string(_font, m + Vector2(6, -6), "EW", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1.0, 0.75, 0.25))
+			elif n is Warship and not n.destroyed:
+				_map.draw_arc(m, n.sam_range / view.size.x * s.x, 0, TAU, 48, Color(1.0, 0.3, 0.25, 0.3), 1.0)
 			_map.draw_rect(Rect2(m - Vector2(3, 3), Vector2(6, 6)), col)
+	# GPS saldırı hedefi (sol tık: seç, sağ tık: kaldır) — seyir füzesi ve süzülen bomba
+	var vv: Vessel = main.vessel
+	if is_instance_valid(vv) and vv.strike_xz != Vector2.INF:
+		var sp := _to_map(vv.strike_xz, view)
+		var gold := Color(1.0, 0.85, 0.2)
+		_map.draw_line(sp - Vector2(12, 0), sp + Vector2(12, 0), gold, 2.0)
+		_map.draw_line(sp - Vector2(0, 12), sp + Vector2(0, 12), gold, 2.0)
+		_map.draw_arc(sp, 8.0, 0, TAU, 20, gold, 2.0)
+		var me2 := _to_map(to_xz(vv.global_position), view)
+		_map.draw_dashed_line(me2, sp, Color(gold, 0.6), 1.5, 8.0)
+		var km := to_xz(vv.global_position).distance_to(vv.strike_xz) / 1000.0
+		_map.draw_string(_font, sp + Vector2(14, -6), "GPS HEDEF  %.1f km" % km, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, gold)
 	var mm: MissionManager = main.mission
 	if mm and mm.nav_point != null:
 		var np := _to_map(to_xz(mm.nav_point), view)
@@ -201,7 +228,7 @@ func _draw_map() -> void:
 	var px := km / view.size.x * s.x
 	_map.draw_line(Vector2(16, s.y - 18), Vector2(16 + px, s.y - 18), Color.WHITE, 2.0)
 	_map.draw_string(_font, Vector2(16, s.y - 24), "%s" % ("%d km" % (km / 1000.0) if km >= 1000.0 else "%d m" % km), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
-	_map.draw_string(_font, Vector2(16, 24), "HARİTA  ·  tekerlek: yakınlaştır (x%.1f)  ·  M: kapat" % _zoom, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
+	_map.draw_string(_font, Vector2(16, 24), "HARİTA  ·  tekerlek: yakınlaştır (x%.1f)  ·  sol tık: GPS hedef  ·  sağ tık: kaldır  ·  M: kapat" % _zoom, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
 	_map.draw_string(_font, Vector2(s.x - 26, 26), "K", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE)
 	_map.draw_line(Vector2(s.x - 20, 34), Vector2(s.x - 20, 56), Color.WHITE, 2.0)
 

@@ -93,6 +93,9 @@ static func is_seen(v: Vessel) -> bool:
 	for st in RadarStation.stations:
 		if not st.destroyed and st.team != v.team and st.sees(v):
 			return true
+	for sh in Warship.ships:
+		if is_instance_valid(sh) and sh.team != v.team and sh.global_position.distance_to(me) < sh.radar_range * 1.6 and sh.sees(v):
+			return true
 	for team in _reports:
 		if team != v.team and _reports[team].has(v) and now() - float(_reports[team][v]) < 2.0:
 			return true

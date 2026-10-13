@@ -1,0 +1,26 @@
+{
+	"name": "Herkül C-130",
+	"group": "Destek & Nakliye",
+	"description": "Dört turboproplu taktik nakliye uçağı: yüksek kanat, arkası yükselen kargo rampası, 32 sandık (3 ağır kargo bölmesi + rampa). Kısa ve engebeli pistlere iner; ağır yüklüyken uzun koşuyla kalkar ve geç döner. Ağır Nakliye görevi için.",
+	"paint": {"scheme": "gri", "number": "C-130"},
+	"parts": [
+		{"part": "cockpit_airliner", "pos": [0, 0, -0.75], "scale": 1.5},
+		{"part": "cargo_bay_heavy",  "pos": [0, 0, 4.5], "scale": 1.5},
+		{"part": "cargo_bay_heavy",  "pos": [0, 0, 9.0], "scale": 1.5},
+		{"part": "cargo_bay_heavy",  "pos": [0, 0, 13.5], "scale": 1.5},
+		{"part": "cargo_ramp",       "pos": [0, 0, 18.0], "scale": 1.5},
+
+		{"part": "wing_straight",    "pos": [5.0, 0.8, 9.0], "rot": [0.3, 0, 1], "mirror": true, "scale": 1.5},
+		{"part": "wing_straight",    "pos": [13.1, 0.94, 9.0], "rot": [0.3, 0, 1], "mirror": true, "scale": 1.5},
+		{"part": "elevon",           "pos": [14.2, 0.94, 10.95], "mirror": true, "scale": 1.5},
+		{"part": "turboprop",        "pos": [4.6, 0.62, 6.6], "mirror": true, "scale": 1.15},
+		{"part": "turboprop",        "pos": [9.6, 0.7, 6.6], "mirror": true, "scale": 1.15},
+
+		{"part": "fin_vertical",     "pos": [0, 2.3, 19.3], "rot": [0, 0, 90], "scale": 1.5},
+		{"part": "rudder",           "pos": [0, 2.0, 21.3], "rot": [0, 0, 90], "scale": 1.5},
+		{"part": "stabilator",       "pos": [2.0, 0.3, 20.0], "mirror": true, "scale": 1.5},
+
+		{"part": "gear_nose_heavy",  "pos": [0, -0.9, -1.35], "scale": 1.4},
+		{"part": "gear_main_heavy",  "pos": [1.05, -0.9, 9.9], "mirror": true, "scale": 1.15}
+	]
+}

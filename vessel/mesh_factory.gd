@@ -157,6 +157,17 @@ static func _naca(x: float, t: float) -> float:
 
 
 static func _mesh(verts: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array) -> ArrayMesh:
+	# Sarım düzeltmesi: Godot'da ön yüz saat yönünde (kamera tarafından bakınca), yani
+	# cross(b-a, c-a) dış normalin TERSİNE bakar. Ters sarımlı üçgenler arka yüz sayılıp yanlış
+	# gölge ofsetiyle karardığı için (bir kanat koyu, öbürü açık) her üçgen normaline göre çevrilir.
+	for t in range(0, indices.size() - 2, 3):
+		var a := verts[indices[t]]
+		var g := (verts[indices[t + 1]] - a).cross(verts[indices[t + 2]] - a)
+		var n := normals[indices[t]] + normals[indices[t + 1]] + normals[indices[t + 2]]
+		if g.dot(n) > 0.0:
+			var tmp := indices[t + 1]
+			indices[t + 1] = indices[t + 2]
+			indices[t + 2] = tmp
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts

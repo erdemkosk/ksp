@@ -147,16 +147,21 @@ func _start_jobs() -> void:
 		job.ix = key.y
 		job.iy = key.z
 		job.level = key.w
-		_jobs[key] = [job, WorkerThreadPool.add_task(job.run)]
+		_jobs[key] = [job, WorkerThreadPool.add_task(job.run_all)]
 
 
 func _collect_finished() -> void:
+	# karede en fazla 2 parça sahneye eklenir (yükleme sırasında generate_now hepsini bekler)
+	var built := 0
 	for key: Vector4i in _jobs.keys():
 		var task: int = _jobs[key][1]
 		if WorkerThreadPool.is_task_completed(task):
 			WorkerThreadPool.wait_for_task_completion(task)
 			_chunks[key] = _build_chunk(_jobs[key][0])
 			_jobs.erase(key)
+			built += 1
+			if built >= 2:
+				return
 
 
 ## Artık istenmeyen bir parçayı, onun alanını kaplayan yeni parçalar hazır olunca siler.
@@ -219,23 +224,26 @@ func _build_chunk(job: TerrainChunkJob) -> Node3D:
 		omi.material_override = ocean_material
 		omi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(omi)
-	_add_multimesh(root, _conifer, job.conifers)
-	_add_multimesh(root, _broadleaf, job.broadleaves)
-	_add_multimesh(root, _house, job.houses)
+	_add_multimesh(root, _conifer, job.conifers, job.conifer_buf)
+	_add_multimesh(root, _broadleaf, job.broadleaves, job.broadleaf_buf)
+	_add_multimesh(root, _house, job.houses, job.house_buf)
 	add_child(root)
 	_place(root)
 	return root
 
 
-func _add_multimesh(root: Node3D, mesh: Mesh, transforms: Array[Transform3D]) -> void:
+func _add_multimesh(root: Node3D, mesh: Mesh, transforms: Array[Transform3D], buf := PackedFloat32Array()) -> void:
 	if transforms.is_empty():
 		return
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = mesh
 	mm.instance_count = transforms.size()
-	for i in transforms.size():
-		mm.set_instance_transform(i, transforms[i])
+	if buf.size() == transforms.size() * 12:
+		mm.buffer = buf
+	else:
+		for i in transforms.size():
+			mm.set_instance_transform(i, transforms[i])
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
 	mmi.visibility_range_end = 4500.0

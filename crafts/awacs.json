@@ -1,0 +1,28 @@
+{
+	"name": "Gözcü AWACS",
+	"group": "Destek & Nakliye",
+	"description": "Havadan erken uyarı uçağı: geniş gövde, dört turboprop, sırtında dönen radar diski. 80 km her yönü görür ve gördüğünü takımına veri bağıyla bildirir (avcılar ve SAM'lar hedefi bilir). Ağır ve yavaş: korunması gerekir. Görevlerde düşman tarafında da uçar (RWR'da A).",
+	"paint": {"scheme": "gri", "number": "A-01"},
+	"parts": [
+		{"part": "cockpit_airliner", "pos": [0, 0, -0.75], "scale": 1.5},
+		{"part": "cargo_bay",        "pos": [0, 0, 4.5], "scale": 1.5},
+		{"part": "cargo_bay",        "pos": [0, 0, 9.0], "scale": 1.5},
+		{"part": "cargo_bay",        "pos": [0, 0, 13.5], "scale": 1.5},
+		{"part": "tank_long",        "pos": [0, 0, 18.75], "scale": 1.5},
+		{"part": "tail_cone",        "pos": [0, 0, 22.95], "scale": 1.5},
+		{"part": "awacs_dome",       "pos": [0, 1.75, 14.0], "scale": 1.15},
+
+		{"part": "wing_straight",    "pos": [5.0, -0.3, 10.3], "rot": [0.3, 0, 2], "mirror": true, "scale": 1.5},
+		{"part": "wing_straight",    "pos": [13.1, -0.02, 10.3], "rot": [0.3, 0, 2], "mirror": true, "scale": 1.5},
+		{"part": "elevon",           "pos": [14.2, -0.02, 12.25], "mirror": true, "scale": 1.5},
+		{"part": "turboprop",        "pos": [4.6, -0.3, 7.9], "mirror": true, "scale": 1.15},
+		{"part": "turboprop",        "pos": [9.6, -0.15, 7.9], "mirror": true, "scale": 1.15},
+
+		{"part": "fin_vertical",     "pos": [0, 2.7, 21.3], "rot": [0, 0, 90], "scale": 1.5},
+		{"part": "rudder",           "pos": [0, 2.4, 23.3], "rot": [0, 0, 90], "scale": 1.5},
+		{"part": "stabilator",       "pos": [2.35, 0.1, 22.4], "mirror": true, "scale": 1.5},
+
+		{"part": "gear_nose_heavy",  "pos": [0, -0.9, -1.35], "scale": 1.4},
+		{"part": "gear_main_heavy",  "pos": [0.85, -0.9, 12.1], "mirror": true, "scale": 1.25}
+	]
+}

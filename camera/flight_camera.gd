@@ -60,10 +60,34 @@ func is_eva() -> bool:
 
 
 func mode_name() -> String:
+	if is_instance_valid(missile_cam) or _mc_linger > 0.0:
+		return "FÜZE KAMERASI"
 	return "EVA" if is_eva() else MODE_NAMES[mode]
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# füze kamerasında fareyle etrafa bak (yakalı fare ya da sağ sürükle), tekerlekle uzaklaş
+	if missile_view():
+		if event is InputEventMouseMotion and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)):
+			var k := 0.004 * float(Game.settings.get("mouse_sens", 1.0))
+			_mc_yaw = wrapf(_mc_yaw - event.relative.x * k, -PI, PI)
+			_mc_pitch = clampf(_mc_pitch - event.relative.y * k, -1.3, 1.3)
+			get_viewport().set_input_as_handled()
+			return
+		if event is InputEventMouseButton and event.pressed:
+			if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+				_mc_dist = maxf(_mc_dist * 0.88, 3.0)
+				get_viewport().set_input_as_handled()
+				return
+			if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				_mc_dist = minf(_mc_dist * 1.12, 60.0)
+				get_viewport().set_input_as_handled()
+				return
+			if event.button_index == MOUSE_BUTTON_MIDDLE:
+				_mc_yaw = 0.0
+				_mc_pitch = 0.0
+				get_viewport().set_input_as_handled()
+				return
 	# yürürken fare yakalıysa bakış doğrudan fareyle (TPS gibi)
 	if event is InputEventMouseMotion and is_eva() and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var k := 0.0028 * float(Game.settings.get("mouse_sens", 1.0))
@@ -112,8 +136,89 @@ func _unhandled_input(event: InputEvent) -> void:
 			orbit_yaw = 0.0
 
 
+## Füze kamerası: füze atıldıktan sonra Space basılı tutulursa kamera füzeyi arkadan izler;
+## füze patlayınca 1.5 sn isabet noktasında kalır, Space bırakılınca uçağa döner.
+var missile_cam: Node3D
+var _mc_seen := {}
+var _mc_hold := 0.0
+var _mc_last := Transform3D()
+var _mc_linger := 0.0
+## füze kamerasında serbest bakış: füzenin uçuş yönüne göre açı (fare), uzaklık (tekerlek)
+var _mc_yaw := 0.0
+var _mc_pitch := 0.0
+var _mc_dist := 9.0
+
+
+var _mc_center := Vector3.ZERO
+var _mc_fwd := Vector3.FORWARD
+
+
+## Füzenin (ya da isabet noktasının) arkasında dur; fareyle merkez çevresinde dön. Düz arkadan
+## bakarken ileriye (hedefe doğru), yana / yukarı döndükçe füzenin kendisine bakar.
+func _mc_place(flying: bool) -> void:
+	var up := Planet.up_at(_mc_center)
+	var right := _mc_fwd.cross(up)
+	if right.length_squared() < 0.01:
+		right = Vector3.RIGHT
+	right = right.normalized()
+	var orbit := Basis(up, _mc_yaw) * Basis(right, _mc_pitch)
+	var pos := _mc_center + orbit * (-_mc_fwd * _mc_dist + up * _mc_dist * 0.22)
+	var turn := 1.0 if not flying else clampf((absf(_mc_yaw) + absf(_mc_pitch)) / 0.9, 0.0, 1.0)
+	var look := (_mc_center + _mc_fwd * 40.0).lerp(_mc_center, turn)
+	if pos.distance_to(look) > 0.1:
+		_mc_last = Transform3D(Basis.IDENTITY, pos).looking_at(look, up)
+	global_transform = _mc_last
+
+
+## Füze kamerası şu an etkin mi (füzeyi izliyor ya da isabet noktasında bekliyor).
+func missile_view() -> bool:
+	return is_instance_valid(missile_cam) or _mc_linger > 0.0
+
+
+func _update_missile_cam(delta: float) -> bool:
+	var held := Input.is_action_pressed("fire") and is_instance_valid(target) and not is_eva()
+	if _mc_seen.size() > 40:
+		for k in _mc_seen.keys():
+			if not is_instance_valid(k):
+				_mc_seen.erase(k)
+	# yeni atılan füzeyi yakala
+	for m: Missile in Missile.active:
+		if is_instance_valid(m) and m.shooter == target and not _mc_seen.has(m):
+			_mc_seen[m] = Time.get_ticks_msec()
+			if held:
+				_mc_hold = 0.0
+				missile_cam = m
+				_mc_yaw = 0.0
+				_mc_pitch = 0.0
+	if not held:
+		missile_cam = null
+		_mc_linger = 0.0
+		return false
+	if missile_cam != null and not is_instance_valid(missile_cam):
+		missile_cam = null
+		_mc_linger = 1.5
+	if is_instance_valid(missile_cam):
+		_mc_hold += delta
+		if _mc_hold < 0.35:
+			return false
+		var m := missile_cam as Missile
+		var vel: Vector3 = m.velocity if m.velocity.length() > 1.0 else -m.global_basis.z
+		var fwd := vel.normalized()
+		_mc_center = m.global_position
+		_mc_fwd = fwd
+		_mc_place(true)
+		return true
+	if _mc_linger > 0.0:
+		_mc_linger -= delta
+		_mc_place(false)     # isabet noktası çevresinde de fareyle dönülebilir
+		return true
+	return false
+
+
 func _process(delta: float) -> void:
 	_update(1.0 - exp(-4.0 * delta))
+	if _update_missile_cam(delta):
+		return
 	_apply_feel(delta)
 
 
@@ -229,7 +334,8 @@ func _apply_feel(delta: float) -> void:
 	var base := 0.0
 	var aoa := absf(v.aoa_deg())
 	if speed > 40.0 and aoa > 11.0:
-		base = maxf(base, clampf((aoa - 11.0) / 8.0, 0.0, 1.0) * 0.4)           # stall öncesi titreme
+		base = maxf(base, clampf((aoa - 11.0) / 8.0, 0.0, 1.0) * 0.25)          # stall öncesi titreme
+	base = maxf(base, v.wing_buffet() * 0.5)   # kanat tipine göre: stall yaklaşırken ve şok bölgesinde
 	base = maxf(base, Weather.turbulence() * clampf(speed / 150.0, 0.2, 1.0) * 0.5 * (1.0 - smoothstep(1500.0, 6000.0, v.altitude())))  # türbülans
 	if speed > 220.0 and v.radar_altitude() < 400.0:
 		base = maxf(base, clampf((speed - 220.0) / 200.0, 0.0, 0.3))           # alçak + hızlı

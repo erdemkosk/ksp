@@ -61,9 +61,11 @@ func _physics_process(delta: float) -> void:
 	if Input.is_key_pressed(KEY_ALT):
 		pitch_trim = clampf(pitch_trim + pitch_input * 0.25 * delta, -0.5, 0.5)
 		pitch_input = 0.0
-	_pitch = move_toward(_pitch, pitch_input, input_response * delta)
-	_yaw = move_toward(_yaw, Input.get_axis("yaw_left", "yaw_right"), input_response * delta)
-	_roll = move_toward(_roll, Input.get_axis("roll_left", "roll_right"), input_response * delta)
+	# ağır / büyük uçakta çubuk (ve boynuz lövye) daha ağır hareket eder: tam sapmaya geç ulaşır
+	var resp := input_response * ControlSurfaceModule.response_factor(vessel.mass)
+	_pitch = move_toward(_pitch, pitch_input, resp * delta)
+	_yaw = move_toward(_yaw, Input.get_axis("yaw_left", "yaw_right"), resp * delta)
+	_roll = move_toward(_roll, Input.get_axis("roll_left", "roll_right"), resp * delta)
 
 	var manual_throttle := false
 	if Input.is_action_pressed("throttle_up"):
@@ -105,6 +107,7 @@ func _physics_process(delta: float) -> void:
 	var pitch := _pitch
 	var yaw := _yaw
 	var roll := _roll
+	var fcs := _fcs()
 	var mouse_active := _mouse_flight_active()
 	var manual := absf(_pitch) > 0.05 or absf(_roll) > 0.05 or absf(_yaw) > 0.05
 	if mouse_active:
@@ -129,13 +132,15 @@ func _physics_process(delta: float) -> void:
 		_yaw = 0.0
 	if vessel.sas:
 		# Gövde açısal hızı: +x burun yukarı, +y burun sola, -z sağa yatış
+		# (mekanik kumandada SAS basit bir dengeleyici: yarı güçte)
 		var w := vessel.local_angular_velocity()
+		var g_sas := sas_gain * (0.5 if fcs == "mech" else 1.0)
 		if absf(pitch) < 0.05:
-			pitch = clampf(-w.x * sas_gain, -1.0, 1.0)
+			pitch = clampf(-w.x * g_sas, -1.0, 1.0)
 		if absf(yaw) < 0.05:
-			yaw = clampf(w.y * sas_gain, -1.0, 1.0)
+			yaw = clampf(w.y * g_sas, -1.0, 1.0)
 		if absf(roll) < 0.05:
-			roll = clampf(w.z * sas_gain, -1.0, 1.0)
+			roll = clampf(w.z * g_sas, -1.0, 1.0)
 
 	if autopilot.any_active():
 		var ap := autopilot.compute(vessel)
@@ -146,7 +151,19 @@ func _physics_process(delta: float) -> void:
 		if ap["throttle"] != null:
 			throttle = move_toward(throttle, ap["throttle"], 0.3 * delta)
 
-	vessel.ctrl_pitch = _limit_g(clampf(_damp_pitch(pitch, delta) + pitch_trim, -1.0, 1.0), delta)
+	# kumanda kuralı kokpite göre (bkz. _fcs): FBW sınırlar, hidrolik sönümler, mekanik ham kumanda
+	match fcs:
+		"fbw":
+			vessel.ctrl_pitch = _limit_aoa(_limit_g(clampf(_damp_pitch(pitch, delta) + pitch_trim, -1.0, 1.0), delta))
+		"hydro":
+			vessel.ctrl_pitch = clampf(_damp_pitch(pitch, delta) + pitch_trim, -1.0, 1.0)
+		_:
+			var k := _stick_force()
+			vessel.ctrl_pitch = clampf(pitch * k + pitch_trim, -1.0, 1.0)
+			yaw *= k
+			roll *= k
+	if fcs != "fbw":
+		_warnings(delta)
 	vessel.ctrl_yaw = yaw
 	vessel.ctrl_roll = roll
 	vessel.ctrl_throttle = throttle
@@ -238,7 +255,9 @@ func _process(_delta: float) -> void:
 		return
 	# yürürken (EVA) fare her zaman bakış içindir; uçuşta yalnız fareyle uçuş açıkken
 	var free_cursor := Input.is_key_pressed(KEY_ALT) or not DisplayServer.window_is_focused() or FlightMap.showing
-	var want_captured := not free_cursor and camera != null and (camera.is_eva() \
+	# paraşütle inerken fare serbest: üstteki zaman hızlandırma vb. tıklanabilsin (bakış: sağ sürükle)
+	var parachuting: bool = camera != null and camera.is_eva() and is_instance_valid(camera.pilot) and camera.pilot.airborne
+	var want_captured := not free_cursor and not parachuting and camera != null and (camera.is_eva() \
 		or (mouse_flight and camera.mode != FlightCamera.Mode.ORBIT and vessel.has_pilot()))
 	var mode := Input.MOUSE_MODE_CAPTURED if want_captured else Input.MOUSE_MODE_VISIBLE
 	if Input.mouse_mode != mode:
@@ -256,6 +275,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		aim_dir = Vector3.ZERO
 		if is_instance_valid(vessel):
 			vessel.system_message.emit("Kumanda: %s" % ("FARE (nişana uçar) — Alt: imleç" if mouse_flight else "KLAVYE / GAMEPAD"))
+		return
+	# füze kamerasında fare etrafa bakmak içindir, uçağı yönlendirmez
+	if event is InputEventMouseMotion and camera and camera.missile_view():
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and is_instance_valid(vessel):
 		if aim_dir == Vector3.ZERO:
@@ -287,6 +309,8 @@ func _limit_g(pitch: float, delta: float) -> float:
 	# şekilde kumanda yetkisi yumuşakça ayarlanır — açıp kapamaz, kumanda akıcı kalır.
 	var g := vessel.g_force
 	var gmax := g_tolerance() - 0.4
+	if _g_cap > 0.0:
+		gmax = minf(gmax, _g_cap)   # kokpitin yapısal sınırı (ör. yolcu uçağı 2.5 G)
 	var gmin := -(2.2 + 0.3 * Crew.skill("dayanim"))
 	var q := maxf(0.5 * vessel.air_density() * vessel.airspeed() * vessel.airspeed(), 500.0)
 	var eff := vessel.ctrl_pitch
@@ -319,3 +343,105 @@ func _damp_pitch(pitch: float, delta: float) -> float:
 	var q := 0.5 * vessel.air_density() * vessel.airspeed() * vessel.airspeed()
 	var kd := clampf(4000.0 / maxf(q, 1.0), 0.04, 0.35)
 	return pitch - clampf(_wdot * kd, -0.5, 0.5)
+
+
+# ------------------------------------------------------------------ kumanda sistemi (kokpite göre)
+
+const FCS_NAMES := {
+	"fbw": "FLY-BY-WIRE — G ve hücum açısı sınırlı",
+	"hydro": "HİDROLİK — sönümlü, sınırlayıcı yok",
+	"mech": "MEKANİK — kablolu, hızlanınca çubuk ağırlaşır",
+}
+## Mekanik kumandada çubuğun "tam çekilebildiği" dinamik basınç (Pa, deniz seviyesinde ~75 m/s).
+const MECH_Q := 3500.0
+
+var _fcs_kind := ""
+var _fcs_vessel: Vessel
+var _stall_deg := 16.0
+var _aoa_lim := 14.0
+var _warn_t := 0.0
+var _over_msg := false
+var _g_cap := 0.0          ## kokpit tanımındaki "g_limit": FBW bu G'den fazlasını çekmez
+
+
+## Kumanda sistemi: kokpit tanımında "fcs" verilmişse o; yoksa sivil (küçük uçak) kokpit
+## mekanik, çerçeveli klasik savaş kokpiti hidrolik, diğerleri FBW. Kokpit tanımındaki
+## "g_limit" FBW'nin G sınırını düşürür (yolcu uçağı: FBW, 2.5 G).
+func _fcs() -> String:
+	if _fcs_vessel != vessel:
+		_fcs_vessel = vessel
+		var c := vessel.cockpit()
+		var kind := fcs_for(c)
+		_fcs_kind = kind
+		_g_cap = float(c.part.def.get("g_limit", 0.0)) if c else 0.0
+		_stall_deg = _main_wing_stall()
+		_aoa_lim = _stall_deg * 0.9
+		vessel.system_message.emit("Kumanda sistemi: " + FCS_NAMES.get(kind, kind))
+	return _fcs_kind
+
+
+## Kokpitin kumanda sistemi ("fbw" / "hydro" / "mech"); hangar da gösterir.
+static func fcs_for(c: CockpitModule) -> String:
+	if c == null:
+		return "fbw"
+	var d: String = c.part.def.get("fcs", "")
+	if d != "":
+		return d
+	if c.canopy_style == "framed":
+		return "hydro"
+	if c.layout == "civil":
+		return "mech"
+	return "fbw"
+
+
+## Ana kanadın (en geniş yatay kanat) stall açısı, derece.
+func _main_wing_stall() -> float:
+	var best := 0.0
+	var deg := 16.0
+	for m in vessel.modules:
+		if m is WingModule and not m is ControlSurfaceModule and absf(m.part.basis.y.y) > 0.6 and m.area > best:
+			best = m.area
+			deg = rad_to_deg(m.stall_angle)
+	return deg
+
+
+## FBW hücum açısı sınırı: stall açısının %90'ında çubuk daha fazla çekmez (burnu indirir),
+## negatifte -10°. Kalkış koşusunda (yavaşken) ve sınırlayıcı kapalıysa devre dışı.
+func _limit_aoa(pitch: float) -> float:
+	if not g_limiter or blackout or vessel.airspeed() < 35.0:
+		return pitch
+	var aoa := vessel.aoa_deg()
+	if pitch > 0.0:
+		pitch = minf(pitch, clampf((_aoa_lim - aoa) / 5.0, -0.5, 1.0))
+	elif pitch < 0.0:
+		pitch = maxf(pitch, clampf((-10.0 - aoa) / 4.0, -1.0, 0.5))
+	return pitch
+
+
+## Mekanik kumanda: hava yükü çubuğu ağırlaştırır — hızlıyken kumanda yüzeyi tam sapamaz
+## (aynı G için daha çok çekmek gerekir), yavaşta tam sapar ama yüzeyler etkisizleşir.
+func _stick_force() -> float:
+	# çubuk kuvveti ~ q × sapma: pilotun kuvveti sabit → çekilebilen sapma ~ 1/q, yani hızlıyken
+	# çekilebilen G kabaca sabit kalır (yine de sert çekilirse gövde zorlanır)
+	var q := 0.5 * vessel.air_density() * vessel.airspeed() * vessel.airspeed()
+	return clampf(MECH_Q / maxf(q, 1.0), 0.22, 1.0)
+
+
+## Sınırlayıcısız kumandada ikazlar: stall'a 2.5° kala hızlı bip (stall ikazı; asıl stall'da
+## WarningVoice konuşur), pilotun G sınırına yaklaşınca kalın bip ve bir kez "AŞIRI YÜK" mesajı.
+func _warnings(delta: float) -> void:
+	_warn_t -= delta
+	if _warn_t > 0.0 or blackout or vessel.airspeed() < 30.0:
+		return
+	var over := vessel.g_force > g_tolerance() - 0.3   # yapısal yük ikazı WarningVoice "OVER G"de
+	if absf(vessel.aoa_deg()) > _stall_deg - 2.5 and vessel.radar_altitude() > 3.0:
+		Sfx.play_ui("caution_beep.ogg", -10.0, 1.7)
+		_warn_t = 0.3
+	elif over:
+		Sfx.play_ui("caution_beep.ogg", -8.0, 0.8)
+		_warn_t = 0.5
+		if not _over_msg:
+			_over_msg = true
+			vessel.system_message.emit("AŞIRI YÜK — çubuğu bırak!")
+	if not over and vessel.g_force < g_tolerance() - 1.5:
+		_over_msg = false

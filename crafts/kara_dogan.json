@@ -1,0 +1,32 @@
+{
+	"name": "Kara Doğan",
+	"group": "Deneysel",
+	"description": "Düşman ası Kara Doğan'ın özel avcısı (ele geçirilen istihbarattan). İkiz J-70 ve afterburner, kanardlı delta kanat, balon kanopi: çok hızlı tırmanır, yüksekte ve süratte ölümcül. İki RF-1 radar füzesi, iki IR füze, top, ECM ve karşı tedbir fişekliği. Siyah gövde, kırmızı şerit, kuyrukta KD-01.",
+	"paint": {"scheme": "kırmızı-beyaz", "color1": "16171b", "number": "KD-01"},
+	"parts": [
+		{"part": "radar_nose",      "pos": [0, 0, -9.65]},
+		{"part": "cockpit_bubble",  "pos": [0, 0, -7.25]},
+		{"part": "tank_long",       "pos": [0, 0, -3.75]},
+		{"part": "tank_long",       "pos": [0, 0, 0.25]},
+		{"part": "twin_adapter",    "pos": [0, 0, 3.25]},
+		{"part": "jet_engine",      "pos": [0.69, 0, 5.5], "mirror": true},
+
+		{"part": "gun_pod",         "pos": [0.72, -0.35, -4.3]},
+		{"part": "flare_pod",       "pos": [0, -0.78, 1.0]},
+		{"part": "ecm_pod",         "pos": [0, -0.88, -2.4]},
+		{"part": "intake_side",     "pos": [0.88, 0.1, -2.2], "mirror": true},
+		{"part": "canard",          "pos": [1.35, 0.3, -5.2], "mirror": true},
+
+		{"part": "wing_delta",      "pos": [2.9, -0.2, 0.9], "mirror": true},
+		{"part": "elevon",          "pos": [2.2, -0.2, 3.8], "mirror": true},
+		{"part": "pylon",           "pos": [2.1, -0.62, 0.3], "mirror": true},
+		{"part": "radar_missile_rail", "pos": [2.1, -1.05, 0.3], "mirror": true},
+		{"part": "missile_rail",    "pos": [4.1, -0.45, 1.9], "mirror": true},
+
+		{"part": "wing_small",      "pos": [0, 1.6, 4.2], "rot": [0, 0, 90]},
+		{"part": "rudder",          "pos": [0, 1.6, 5.45], "rot": [0, 0, 90]},
+
+		{"part": "gear_nose",       "pos": [0, -0.6, -6.5]},
+		{"part": "gear_main",       "pos": [1.2, -0.6, 1.6], "mirror": true}
+	]
+}

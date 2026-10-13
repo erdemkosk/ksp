@@ -86,10 +86,22 @@ func set_cover(cover: Node3D) -> void:
 
 
 func is_on() -> bool:
-	return getter.is_valid() and bool(getter.call())
+	return _owner_ok() and getter.is_valid() and bool(getter.call())
+
+
+## Anahtarın sahibi kokpit modülü hâlâ bir uçağa bağlı mı (parça koptuysa / pilot öldüyse değil).
+func _owner_ok() -> bool:
+	if not getter.is_valid():
+		return false
+	var o: Object = getter.get_object()
+	if o is PartModule:
+		return is_instance_valid((o as PartModule).vessel)
+	return true
 
 
 func activate() -> void:
+	if not _owner_ok():
+		return
 	_cover_idle = 0.0
 	if _cover and not _cover_open:
 		_cover_open = true
@@ -114,6 +126,10 @@ func tooltip() -> String:
 
 
 func _process(delta: float) -> void:
+	# yalnız kamera yakındayken (kokpit / yakın dış görünüm): yapay zekâ uçaklarının onlarca anahtarı boşuna çalışmasın
+	var cam := get_viewport().get_camera_3d()
+	if cam == null or cam.global_position.distance_squared_to(global_position) > 1600.0:
+		return
 	var on := is_on()
 	if _lever:
 		var target := deg_to_rad(on_angle if on else off_angle)

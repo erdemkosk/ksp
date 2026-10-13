@@ -174,6 +174,8 @@ func _process(_delta: float) -> void:
 		var b := clampf((aoa - 10.0) / 8.0, 0.0, 1.0) * clampf(vessel.airspeed() / 60.0, 0.0, 1.0)
 		# ses hızı civarında şok dalgası titremesi (transonik)
 		b = maxf(b, clampf(1.0 - absf(vessel.mach() - 1.0) / 0.07, 0.0, 1.0) * 0.55)
+		# kanat tipine göre titreşim (düz kanatta stall öncesi sert, deltada hafif; kalın kanatta şok)
+		b = maxf(b, vessel.wing_buffet() * 0.9)
 		_buffet.volume_db = linear_to_db(maxf(b, 0.0001)) + 2.0
 	if is_instance_valid(_rumble):
 		var firing := vessel.ctrl_fire and vessel.master_arm and vessel.selected_weapon == Vessel.WEAPON_GUN and vessel.gun_ammo() > 0 and vessel.has_power()

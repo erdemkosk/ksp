@@ -56,6 +56,11 @@ func toggle() -> void:
 func _leave() -> void:
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	# kariyerde gerçek görevi yarıda bırakmak geri çekilme sayılır: görev başarısız, cephe geriler
+	if main and main.mission and main.mission.state == "running" and not Career.sandbox() and not Game.test_flight:
+		var d: Dictionary = main.mission.def
+		main.mission.state = "fail"
+		Career.mission_finished(String(d.get("id", "")), int(d.get("level", 1)), false)
 	if main:
 		main.close_flight(false)
 	FloatingOrigin.reset_world()

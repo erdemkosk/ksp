@@ -332,6 +332,17 @@ static func _register_extra() -> void:
 	_register_civil()
 
 
+## Pervaneli motor kaportasının ön ve arka kapakları: kaporta açık uçlu bir boru — önde
+## pervane göbeği ile kaporta arasında koyu motor yüzü (soğutma girişi), arkada egzoz kapağı;
+## yoksa içinden gökyüzü görünür. Adları "Cap…": turboprop kendi boyuna göre yeniden kurar.
+static func _cowl_caps(front_z: float, front_r: float, rear_z: float, rear_r: float) -> Array:
+	return [
+		{"type": "cyl", "name": "CapFront", "axis": "z", "r": front_r, "len": 0.03, "pos": Vector3(0, 0, front_z), "mat": "dark"},
+		{"type": "lathe", "name": "CapFrontRing", "profile": [Vector2(front_z + 0.02, front_r * 0.98), Vector2(front_z + 0.03, front_r * 0.6)], "mat": "metal"},
+		{"type": "lathe", "name": "CapRear", "profile": [Vector2(rear_z, rear_r), Vector2(rear_z + 0.25, rear_r * 0.55), Vector2(rear_z + 0.3, 0.0)], "mat": "paint_dark"},
+	]
+
+
 ## Sivil / yardım parçaları: pervaneli motor, yolcu kabini, kargo bölmesi, düz kanat.
 static func _register_civil() -> void:
 	var prop_visuals := [
@@ -341,7 +352,8 @@ static func _register_civil() -> void:
 	_defs["prop_engine"] = {
 		"title": "P-26 Pervaneli Motor", "category": "motor", "mass": 380.0, "hp": 140.0, "cost": 1200,
 		"size": Vector3(1.25, 1.25, 1.6),
-		"visuals": prop_visuals + _prop_blades() + [{"type": "cyl", "name": "PropDisc", "axis": "z", "r": 1.2, "len": 0.01, "pos": Vector3(0, 0, -0.62), "mat": "prop_disc"}],
+		"visuals": prop_visuals + _prop_blades() + [{"type": "cyl", "name": "PropDisc", "axis": "z", "r": 1.2, "len": 0.01, "pos": Vector3(0, 0, -0.62), "mat": "prop_disc"}]
+			+ _cowl_caps(-0.48, 0.49, 0.79, 0.59),
 		"colliders": [{"type": "cyl", "r": 0.6, "len": 1.4, "pos": Vector3(0, 0, 0.1)}],
 		"modules": [
 			{"type": "engine", "max_thrust": 26000.0, "fuel_rate": 0.35, "spool_rate": 0.5, "prop": true, "prop_vmax": 150.0},
@@ -378,6 +390,33 @@ static func _register_civil() -> void:
 		"modules": [
 			{"type": "cargo", "crates": 4},
 			{"type": "body_drag", "front_area": 1.33, "side_area": 3.9, "cd_front": 0.03},
+		],
+	}
+	# nakliye uçağı (C-130 gibi): makaralı zeminli ağır kargo bölmesi ve arkası yükselen rampa
+	var hold := (_defs["cargo_bay"] as Dictionary).duplicate(true)
+	hold["title"] = "Ağır Kargo Bölmesi (10 sandık)"
+	hold["mass"] = 620.0
+	hold["hp"] = 220.0
+	hold["cost"] = 1600
+	for sx in [-0.25, 0.25]:      # makaralı yük rayları (altta, görünür şerit)
+		hold["visuals"].append({"type": "box", "size": Vector3(0.06, 0.03, 2.8), "pos": Vector3(sx, -0.63, 0), "mat": "metal"})
+	hold["visuals"].append({"type": "box", "size": Vector3(0.04, 0.22, 0.22), "pos": Vector3(-0.645, 0.18, -1.0), "mat": "screen", "color": Color(0.2, 0.3, 0.4)})
+	hold["modules"][0] = {"type": "cargo", "crates": 10}
+	_defs["cargo_bay_heavy"] = hold
+	_defs["cargo_ramp"] = {
+		"title": "Kargo Rampası (arka yük kapısı, 2 sandık)", "category": "gövde", "mass": 380.0, "hp": 170.0, "cost": 1100,
+		"size": Vector3(1.3, 1.3, 3.0),
+		"visuals": [
+			# arkaya doğru incelen kuyruk bölümü; altta yukarı kalkık rampa kapısı
+			{"type": "lathe", "profile": [Vector2(-1.5, 0.65), Vector2(-0.6, 0.64), Vector2(0.4, 0.55), Vector2(1.2, 0.4), Vector2(1.5, 0.32)], "mat": "paint", "color": Color(0.42, 0.46, 0.36)},
+			{"type": "box", "size": Vector3(0.95, 0.05, 2.3), "pos": Vector3(0, -0.47, 0.05), "rot": Vector3(-9.0, 0, 0), "mat": "paint_dark"},
+			{"type": "box", "size": Vector3(1.0, 0.04, 0.04), "pos": Vector3(0, -0.63, -1.1), "mat": "dark"},
+			{"type": "box", "size": Vector3(0.05, 0.03, 2.2), "pos": Vector3(0, -0.5, 0.05), "rot": Vector3(-9.0, 0, 0), "mat": "yellow"},
+		],
+		"colliders": [{"type": "cyl", "r": 0.55, "len": 3.0}],
+		"modules": [
+			{"type": "cargo", "crates": 2},
+			{"type": "body_drag", "front_area": 1.33, "side_area": 3.2, "cd_front": 0.03},
 		],
 	}
 	_defs["wing_straight"] = _wing("Düz Kanat (yüksek kaldırma)", Vector3(5.5, 0.22, 1.9), 260.0, 9.5, 6.5, 17.0,
@@ -435,26 +474,35 @@ static func _ogive(z_front: float, length: float, radius: float) -> Array:
 
 ## Raydaki füze: gövde, arayıcı başlık, orta (ya da ön) ve kuyruk kanatçıkları (X düzeni).
 ## Hepsi "Missile" düğümünün altında: fırlatınca birlikte gizlenir.
-static func _missile_visuals(length: float, r: float, radar: bool) -> Array:
+## Uçuştaki füze (Missile) de aynı modeli kullanır: raydaki ile havadaki aynı görünür.
+static func _missile_visuals(length: float, r: float, radar: bool, body := Color(0.88, 0.89, 0.87)) -> Array:
 	var h := length * 0.5
-	var body := Color(0.88, 0.89, 0.87)
+	var nose := 0.4 if radar else 0.32
 	var out := [
-		{"type": "lathe", "name": "Missile", "segments": 16, "pos": Vector3(0, -0.05 - r, 0), "mat": "paint", "color": body,
-			"profile": [Vector2(-h + 0.32, r * 0.95), Vector2(-h + 0.4, r), Vector2(h - 0.05, r), Vector2(h, r * 0.7)]},
-		# burun: IR'de koyu cam kubbe, radarda boyalı sivri radom
-		{"type": "lathe", "parent": "Missile", "segments": 16, "mat": "radome" if radar else "dark",
-			"profile": _ogive(-h, 0.4 if radar else 0.32, r * 0.95)},
-		# gövde bandı (canlı mühimmat: sarı) ve lüle
-		{"type": "cyl", "parent": "Missile", "r": r * 1.02, "len": 0.05, "pos": Vector3(0, 0, -h + 0.55), "mat": "yellow"},
-		{"type": "cyl", "parent": "Missile", "r": r * 0.6, "len": 0.06, "pos": Vector3(0, 0, h), "mat": "dark"},
+		{"type": "lathe", "name": "Missile", "segments": 20, "pos": Vector3(0, -0.05 - r, 0), "mat": "paint", "color": body,
+			"profile": [Vector2(-h + nose - 0.02, r * 0.95), Vector2(-h + nose + 0.06, r), Vector2(h - 0.12, r), Vector2(h - 0.02, r * 0.82), Vector2(h, r * 0.72)]},
+		# burun: IR'de koyu cam kubbe (arayıcı), radarda boyalı sivri radom
+		{"type": "lathe", "parent": "Missile", "segments": 20, "mat": "radome" if radar else "dark",
+			"profile": _ogive(-h, nose, r * 0.95)},
+		# bantlar: sarı (canlı harp başlığı), kahverengi (roket motoru), kablo kanalı, metal lüle
+		{"type": "cyl", "parent": "Missile", "r": r * 1.02, "len": 0.05, "pos": Vector3(0, 0, -h + nose + 0.22), "mat": "yellow"},
+		{"type": "cyl", "parent": "Missile", "r": r * 1.02, "len": 0.04, "pos": Vector3(0, 0, -h + length * 0.45), "mat": "paint", "color": Color(0.48, 0.32, 0.16)},
+		{"type": "box", "parent": "Missile", "size": Vector3(r * 0.35, r * 0.3, length * 0.55), "pos": Vector3(0, r * 0.98, 0.05), "mat": "paint", "color": body.darkened(0.12)},
+		{"type": "lathe", "parent": "Missile", "segments": 16, "mat": "metal",
+			"profile": [Vector2(h - 0.02, r * 0.72), Vector2(h + 0.06, r * 0.62), Vector2(h + 0.06, r * 0.5), Vector2(h - 0.04, r * 0.45)]},
 	]
-	var fin_z := [-h + 0.75, h - 0.22] if not radar else [-0.1, h - 0.22]
-	var fin_span := [r * 2.6, r * 3.4] if not radar else [r * 3.6, r * 3.2]
-	var fin_chord := [0.18, 0.32] if not radar else [0.55, 0.3]
+	# X düzeni kanatçıklar: ön (IR: küçük kanard, radar: geniş orta kanat) ve kuyruk; her biri
+	# kökü gövdede, uca doğru incelen ok açılı ince yüzey (4 kol ayrı ayrı)
+	var fin_z := [-h + nose + 0.45, h - 0.24] if not radar else [-0.12, h - 0.24]
+	var fin_span := [r * 2.0, r * 2.6] if not radar else [r * 2.8, r * 2.4]
+	var fin_chord := [0.2, 0.36] if not radar else [0.62, 0.34]
 	for i in 2:
-		for roll in [45.0, 135.0]:
-			out.append({"type": "box", "parent": "Missile", "size": Vector3(fin_span[i] * 2.0, 0.008, fin_chord[i]),
-				"pos": Vector3(0, 0, fin_z[i]), "rot": Vector3(0, 0, roll), "mat": "paint", "color": body.darkened(0.08)})
+		for k in 4:
+			var roll := 45.0 + 90.0 * k
+			var dir := Vector3(cos(deg_to_rad(roll)), sin(deg_to_rad(roll)), 0.0)
+			out.append({"type": "wing", "parent": "Missile", "span": fin_span[i], "root": fin_chord[i], "tip": fin_chord[i] * 0.32,
+				"sweep": fin_chord[i] * 0.6, "thick": 0.05, "pos": Vector3(0, 0, fin_z[i]) + dir * (r * 0.9 + fin_span[i] * 0.5),
+				"rot": Vector3(0, 0, roll), "mat": "paint", "color": body.darkened(0.06)})
 	return out
 
 
@@ -560,9 +608,9 @@ static func _cockpit(title: String, layout: String, mass: float, cost: int, cano
 		{"type": "lathe", "profile": [Vector2(-1.5, 0.65), Vector2(open_from, 0.65)], "mat": "paint", "color": paint},
 		{"type": "lathe", "profile": [Vector2(open_from, 0.65), Vector2(open_to, 0.65)], "mat": "paint", "color": paint, "arc_from": arc_from, "arc_to": arc_to, "inner": 1.0},
 		{"type": "lathe", "profile": [Vector2(open_to, 0.65), Vector2(1.5, 0.65)], "mat": "paint", "color": paint},
-		{"type": "lathe", "profile": [Vector2(open_from, 0.62), Vector2(open_to, 0.62)], "mat": "interior", "arc_from": arc_from, "arc_to": arc_to},
-		{"type": "cyl", "r": 0.62, "len": 0.02, "pos": Vector3(0, 0, open_from), "mat": "interior"},
-		{"type": "cyl", "r": 0.62, "len": 0.02, "pos": Vector3(0, 0, open_to), "mat": "interior"},
+		{"type": "lathe", "profile": [Vector2(open_from, 0.62), Vector2(open_to, 0.62)], "mat": "interior", "color": Color(0.11, 0.115, 0.12), "arc_from": arc_from, "arc_to": arc_to},
+		{"type": "cyl", "r": 0.62, "len": 0.02, "pos": Vector3(0, 0, open_from), "mat": "interior", "color": Color(0.11, 0.115, 0.12)},
+		{"type": "cyl", "r": 0.62, "len": 0.02, "pos": Vector3(0, 0, open_to), "mat": "interior", "color": Color(0.11, 0.115, 0.12)},
 		{"type": "box", "size": Vector3(1.0 if civil else 0.8, 0.04, 1.7), "pos": Vector3(0, 0.05, -0.1) + d, "noscale": true, "mat": "dark"},
 		# gösterge paneli (pilota bakar, üstü geriye yatık), göz siperi, panel altı
 		{"type": "box", "size": Vector3(1.22 if civil else 0.74, 0.36, 0.05), "pos": Vector3(0, 0.69, pz - 0.035) + d, "noscale": true, "rot": Vector3(-15, 0, 0), "mat": "interior"},
@@ -605,8 +653,9 @@ static func _airliner_cockpit() -> Dictionary:
 	var d := Vector3(0, drop, 0)
 	var pz := -0.42
 	var tip := [Vector2(-2.0, 0.0), Vector2(-1.9, 0.17), Vector2(-1.75, 0.3), Vector2(-1.55, 0.41)]
-	var band := [Vector2(-1.55, 0.41), Vector2(-1.3, 0.5), Vector2(-1.05, 0.57), Vector2(-0.8, 0.62)]
-	var body := [Vector2(-0.8, 0.62), Vector2(-0.5, 0.65), Vector2(2.0, 0.65)]
+	# cam bandı burnun ucundan gösterge panelinin hemen önüne kadar (ölçekli kokpitte de pilota yakın)
+	var band := [Vector2(-1.55, 0.41), Vector2(-1.3, 0.5), Vector2(-1.05, 0.57), Vector2(-0.8, 0.62), Vector2(-0.55, 0.645), Vector2(-0.3, 0.65)]
+	var body := [Vector2(-0.3, 0.65), Vector2(2.0, 0.65)]
 	var inset := func(prof: Array, dr: float) -> Array:
 		var out := []
 		for p: Vector2 in prof:
@@ -614,13 +663,13 @@ static func _airliner_cockpit() -> Dictionary:
 		return out
 	var v := [
 		{"type": "lathe", "profile": tip, "mat": "paint", "color": paint},
-		# ön cam bandı: alt kısım boya, üst 140° cam (aynı yüzeyde), cam dikmeleri koyu
-		{"type": "lathe", "profile": band, "mat": "paint", "color": paint, "arc_from": 160.0, "arc_to": 380.0, "inner": 1.0},
-		{"type": "lathe", "profile": band, "mat": "glass", "color": Color(0.1, 0.16, 0.24, 0.42), "arc_from": 20.0, "arc_to": 160.0},
+		# ön cam bandı: alt kısım boya, üst 150° cam (aynı yüzeyde, önde ve yanlarda), cam dikmeleri koyu
+		{"type": "lathe", "profile": band, "mat": "paint", "color": paint, "arc_from": 165.0, "arc_to": 375.0, "inner": 1.0},
+		{"type": "lathe", "profile": band, "mat": "glass", "color": Color(0.1, 0.16, 0.24, 0.42), "arc_from": 15.0, "arc_to": 165.0},
 		{"type": "lathe", "profile": body, "mat": "paint", "color": paint, "inner": 1.0},
 		# iç yüzeyler: cam bandının altı, kabin duvarı, arka perde ve ön kapak
-		{"type": "lathe", "profile": inset.call(band, -0.03), "mat": "interior", "arc_from": 160.0, "arc_to": 380.0},
-		{"type": "lathe", "profile": [Vector2(-0.8, 0.59), Vector2(-0.5, 0.62), Vector2(0.95, 0.62)], "mat": "interior"},
+		{"type": "lathe", "profile": inset.call(band, -0.03), "mat": "interior", "arc_from": 165.0, "arc_to": 375.0},
+		{"type": "lathe", "profile": [Vector2(-0.3, 0.62), Vector2(0.95, 0.62)], "mat": "interior"},
 		{"type": "cyl", "r": 0.62, "len": 0.02, "pos": Vector3(0, 0, 0.95), "mat": "interior"},
 		{"type": "cyl", "r": 0.39, "len": 0.02, "pos": Vector3(0, 0, -1.55), "mat": "interior"},
 		# taban, gösterge paneli, göz siperi, panel altı (insan boyu, ölçeklenmez)
@@ -633,12 +682,13 @@ static func _airliner_cockpit() -> Dictionary:
 		{"type": "box", "size": Vector3(1.32, 0.12, 2.6), "pos": Vector3(0, -0.05, 0.7), "mat": "paint", "color": Color(0.15, 0.35, 0.6)},
 	]
 	# cam dikmeleri: ortada ve iki yanda (cam bandının üstünde, ince koyu şeritler)
-	for a in [[86.0, 94.0], [48.0, 53.0], [127.0, 132.0], [20.0, 24.0], [156.0, 160.0]]:
+	for a in [[87.5, 92.5], [52.0, 55.0], [125.0, 128.0], [15.0, 18.0], [162.0, 165.0]]:
 		v.append({"type": "lathe", "profile": inset.call(band, 0.006), "mat": "paint_dark", "arc_from": a[0], "arc_to": a[1]})
 	for sx in [-0.3, 0.3]:
 		v.append_array(_seat_visuals(Vector3(sx, 0, 0.12) + d, 8.0, Color(0.32, 0.22, 0.15), 0.82))
 	return {
 		"title": "Yolcu Uçağı Burun Kokpiti (2 pilot, fırlatma yok)", "category": "kokpit", "mass": 980.0, "hp": 280.0, "cost": 1800,
+		"fcs": "fbw", "g_limit": 2.5,   # yolcu uçağı FBW: yolcuyu ve gövdeyi korur, 2.5 G üstüne çekmez
 		"size": Vector3(1.3, 1.3, 4.0),
 		"visuals": v,
 		"colliders": [{"type": "cyl", "r": 0.65, "len": 2.8, "pos": Vector3(0, 0, 0.6)}, {"type": "cyl", "r": 0.45, "len": 1.2, "pos": Vector3(0, 0, -1.4)}],
@@ -676,6 +726,10 @@ static func _register_more() -> void:
 	# gondol motoru: kendi ön ağzından hava alır (gövde alığına gerek yok)
 	(tf["modules"] as Array).append({"type": "intake", "area": 0.75})
 	_defs["turbofan"] = tf
+	# egzoz dumanı: eski tip turbojetler ve darbeli jet duman bırakır, turbofan temiz yanar
+	for spec in [["jet_engine", 0.35], ["jet_engine_small", 0.5], ["jet_engine_big", 0.25]]:
+		if _defs.has(spec[0]):
+			((_defs[spec[0]]["modules"] as Array)[0] as Dictionary)["smoke"] = spec[1]
 	# yolcu / nakliye uçakları için uzun bacaklı ağır takımlar: büyük gondol motorları yere değmesin
 	var gh := _gear("Ağır Ana İniş Takımı (4 teker)", 420.0, 0.42, 420000.0, 52000.0, false)
 	gh["size"] = Vector3(1.2, 2.0, 1.4)
@@ -734,9 +788,10 @@ static func _register_more() -> void:
 	tp["size"] = Vector3(1.3, 1.3, 2.2)
 	var vis := []
 	for v: Dictionary in tp["visuals"]:
-		if v.get("parent", "") != "Prop" and v.get("name", "") != "PropDisc":
+		if v.get("parent", "") != "Prop" and v.get("name", "") != "PropDisc" and not String(v.get("name", "")).begins_with("Cap"):
 			vis.append(v)
 	vis[0]["profile"] = [Vector2(-0.5, 0.5), Vector2(0.4, 0.64), Vector2(1.6, 0.6)]
+	vis.append_array(_cowl_caps(-0.48, 0.49, 1.6, 0.6))   # uzun kaportanın ön yüzü ve arka kapağı
 	for i in 4:
 		var a := deg_to_rad(i * 90.0)
 		vis.append({"type": "box", "parent": "Prop", "size": Vector3(0.2, 1.55, 0.05), "pos": Vector3(-sin(a), cos(a), 0.0) * 0.8 + Vector3(0, 0, -0.62), "rot": Vector3(0, 16, i * 90.0), "mat": "dark"})
@@ -821,7 +876,7 @@ static func _register_engines() -> void:
 		],
 		"colliders": [{"type": "cyl", "r": 0.34, "len": 3.2}],
 		"modules": [
-			{"type": "engine", "max_thrust": 15000.0, "fuel_rate": 0.9, "spool_rate": 1.5, "pulse_mach": 0.7},
+			{"type": "engine", "max_thrust": 15000.0, "fuel_rate": 0.9, "spool_rate": 1.5, "pulse_mach": 0.7, "smoke": 0.6},
 			{"type": "intake", "area": 0.12},
 			{"type": "body_drag", "front_area": 0.36, "side_area": 2.0, "cd_front": 0.1},
 		],
@@ -1008,6 +1063,135 @@ static func _register_systems() -> void:
 
 
 # ------------------------------------------------------------------ biçim parçaları
+
+## Saldırı silahları ve bombardıman takımı: radar avcısı, seyir ve gemi savar füzeleri,
+## süzülen / misket / 1000 kg bombalar, iç bomba bölmesi, kuyruk tareti.
+static func _register_strike() -> void:
+	_defs["harm_rail"] = {
+		"title": "RA-1 Radar Avcısı Füze (HARM)", "category": "silah", "mass": 35.0, "hp": 60.0, "cost": 4200,
+		"size": Vector3(0.4, 0.5, 4.2),
+		"visuals": [
+			{"type": "box", "size": Vector3(0.08, 0.22, 2.2), "pos": Vector3(0, 0.08, 0), "mat": "paint_dark"},
+		] + _missile_visuals(4.1, 0.12, true),
+		"colliders": [{"type": "box", "size": Vector3(0.3, 0.45, 4.1)}],
+		"modules": [
+			{"type": "missile", "guidance": "arm"},
+			{"type": "body_drag", "front_area": 0.08, "side_area": 0.7, "cd_front": 0.2, "cd_side": 0.6},
+		],
+	}
+	_defs["ship_missile_rail"] = {
+		"title": "GS-1 Gemi Savar Füze", "category": "silah", "mass": 45.0, "hp": 70.0, "cost": 5200,
+		"size": Vector3(0.6, 0.6, 4.8),
+		"visuals": [
+			{"type": "box", "size": Vector3(0.1, 0.22, 2.4), "pos": Vector3(0, 0.12, 0), "mat": "paint_dark"},
+			{"type": "lathe", "name": "Missile", "segments": 16, "pos": Vector3(0, -0.2, 0), "mat": "paint", "color": Color(0.42, 0.45, 0.4),
+				"profile": [Vector2(-2.3, 0.0), Vector2(-1.9, 0.15), Vector2(-1.6, 0.18), Vector2(2.3, 0.18)]},
+			{"type": "box", "parent": "Missile", "size": Vector3(0.9, 0.02, 0.5), "pos": Vector3(0, 0, 0.3), "rot": Vector3(0, 0, 45), "mat": "paint_dark"},
+			{"type": "box", "parent": "Missile", "size": Vector3(0.9, 0.02, 0.5), "pos": Vector3(0, 0, 0.3), "rot": Vector3(0, 0, 135), "mat": "paint_dark"},
+			{"type": "box", "parent": "Missile", "size": Vector3(0.7, 0.02, 0.35), "pos": Vector3(0, 0, 2.0), "rot": Vector3(0, 0, 45), "mat": "paint_dark"},
+			{"type": "box", "parent": "Missile", "size": Vector3(0.7, 0.02, 0.35), "pos": Vector3(0, 0, 2.0), "rot": Vector3(0, 0, 135), "mat": "paint_dark"},
+			{"type": "box", "parent": "Missile", "size": Vector3(0.16, 0.06, 0.5), "pos": Vector3(0, -0.17, -0.6), "mat": "dark"},   # alık
+		],
+		"colliders": [{"type": "box", "size": Vector3(0.5, 0.55, 4.7)}],
+		"modules": [
+			{"type": "missile", "guidance": "ship"},
+			{"type": "body_drag", "front_area": 0.12, "side_area": 0.9, "cd_front": 0.2, "cd_side": 0.6},
+		],
+	}
+	_defs["cruise_missile_rail"] = {
+		"title": "SF-1 Seyir Füzesi (110 km, GPS)", "category": "silah", "mass": 60.0, "hp": 90.0, "cost": 9000,
+		"size": Vector3(0.9, 0.9, 5.4),
+		"visuals": [
+			{"type": "box", "size": Vector3(0.12, 0.26, 2.8), "pos": Vector3(0, 0.2, 0), "mat": "paint_dark"},
+			{"type": "lathe", "name": "Missile", "segments": 18, "pos": Vector3(0, -0.2, 0), "mat": "paint", "color": Color(0.4, 0.43, 0.38),
+				"profile": [Vector2(-2.6, 0.0), Vector2(-2.3, 0.2), Vector2(-1.9, 0.28), Vector2(2.4, 0.28), Vector2(2.6, 0.2)]},
+			{"type": "box", "parent": "Missile", "size": Vector3(0.6, 0.03, 2.4), "pos": Vector3(0, 0.27, 0.2), "mat": "paint_dark"},   # katlı kanat
+			{"type": "box", "parent": "Missile", "size": Vector3(0.22, 0.12, 0.7), "pos": Vector3(0, -0.28, 1.4), "mat": "dark"},     # motor alığı
+			{"type": "box", "parent": "Missile", "size": Vector3(0.75, 0.02, 0.4), "pos": Vector3(0, 0, 2.3), "rot": Vector3(0, 0, 45), "mat": "paint_dark"},
+			{"type": "box", "parent": "Missile", "size": Vector3(0.75, 0.02, 0.4), "pos": Vector3(0, 0, 2.3), "rot": Vector3(0, 0, 135), "mat": "paint_dark"},
+		],
+		"colliders": [{"type": "box", "size": Vector3(0.7, 0.8, 5.3)}],
+		"modules": [
+			{"type": "missile", "guidance": "cruise"},
+			{"type": "body_drag", "front_area": 0.25, "side_area": 1.6, "cd_front": 0.2, "cd_side": 0.6},
+		],
+	}
+	for spec in [["glide_bomb", "SB-500 Süzülen Bomba (GPS, 25 km)", "glide", 1.25, Color(0.38, 0.4, 0.34), 3600],
+			["cluster_bomb", "MB-400 Misket Bombası", "cluster", 1.2, Color(0.36, 0.38, 0.33), 1900],
+			["heavy_bomb", "1000 kg Bomba", "heavy", 1.6, Color(0.3, 0.33, 0.26), 2400]]:
+		var k: float = spec[3]
+		var vis := [
+			{"type": "box", "size": Vector3(0.1, 0.22, 1.2 * k), "pos": Vector3(0, 0.14 * k, 0), "mat": "paint_dark"},
+			{"type": "lathe", "name": "Bomb", "segments": 16, "pos": Vector3(0, -0.18 * k, 0), "mat": "paint", "color": spec[4],
+				"profile": [Vector2(-1.1 * k, 0.0), Vector2(-0.8 * k, 0.16 * k), Vector2(0.5 * k, 0.17 * k), Vector2(1.0 * k, 0.07 * k)]},
+		]
+		for i in 4:
+			vis.append({"type": "box", "parent": "Bomb", "size": Vector3(0.02, 0.36 * k, 0.3 * k), "pos": Vector3(0, 0, 0.95 * k),
+				"rot": Vector3(0, 0, 45 + i * 90), "mat": "paint", "color": spec[4]})
+		if spec[2] == "glide":
+			vis.append({"type": "box", "parent": "Bomb", "size": Vector3(0.5, 0.03, 1.6), "pos": Vector3(0, 0.2, -0.1), "mat": "paint_dark"})
+		elif spec[2] == "cluster":
+			vis.append({"type": "cyl", "parent": "Bomb", "r": 0.19 * k, "len": 0.04, "pos": Vector3(0, 0, -0.2), "mat": "yellow"})
+		_defs[spec[0]] = {
+			"title": spec[1], "category": "silah", "mass": 30.0, "hp": 70.0, "cost": spec[5],
+			"size": Vector3(0.45 * k, 0.7 * k, 2.3 * k),
+			"visuals": vis,
+			"colliders": [{"type": "box", "size": Vector3(0.36 * k, 0.5 * k, 2.1 * k)}],
+			"modules": [
+				{"type": "bomb", "kind": spec[2]},
+				{"type": "body_drag", "front_area": 0.1 * k * k, "side_area": 0.7 * k * k, "cd_front": 0.25, "cd_side": 0.6},
+			],
+		}
+
+	# iç bomba bölmesi: gövde parçası, altında iki kapak (açılınca sürükleme + RCS)
+	_defs["bomb_bay"] = {
+		"title": "İç Bomba Bölmesi (8 × 250 kg)", "category": "gövde", "mass": 520.0, "hp": 200.0, "cost": 3000,
+		"size": Vector3(1.3, 1.3, 3.6),
+		"visuals": [
+			{"type": "lathe", "profile": [Vector2(-1.8, 0.65), Vector2(1.8, 0.65)], "mat": "paint", "arc_from": -40.0, "arc_to": 220.0},
+			{"type": "box", "size": Vector3(1.1, 0.04, 3.4), "pos": Vector3(0, 0.1, 0), "mat": "dark"},
+			{"type": "box", "size": Vector3(0.04, 0.6, 3.4), "pos": Vector3(-0.5, -0.2, 0), "mat": "dark"},
+			{"type": "box", "size": Vector3(0.04, 0.6, 3.4), "pos": Vector3(0.5, -0.2, 0), "mat": "dark"},
+			{"type": "box", "name": "DoorL", "size": Vector3(0.02, 0.02, 0.02), "pos": Vector3(-0.5, -0.42, 0), "mat": "paint"},
+			{"type": "box", "parent": "DoorL", "size": Vector3(0.5, 0.04, 3.4), "pos": Vector3(0.25, 0, 0), "mat": "paint"},
+			{"type": "box", "name": "DoorR", "size": Vector3(0.02, 0.02, 0.02), "pos": Vector3(0.5, -0.42, 0), "mat": "paint"},
+			{"type": "box", "parent": "DoorR", "size": Vector3(0.5, 0.04, 3.4), "pos": Vector3(-0.25, 0, 0), "mat": "paint"},
+		],
+		"colliders": [{"type": "cyl", "r": 0.65, "len": 3.6}],
+		"modules": [
+			{"type": "bomb_bay", "bombs": 8},
+			{"type": "body_drag", "front_area": 1.33, "side_area": 4.6, "cd_front": 0.03},
+		],
+	}
+	# AWACS radar diski: gövde üstünde iki ayak üstünde dönen disk, 80 km her yönü tarar
+	_defs["awacs_dome"] = {
+		"title": "AWACS Radar Diski (80 km, 360°)", "category": "sensör", "mass": 900.0, "hp": 150.0, "cost": 9000, "mount": "surface",
+		"size": Vector3(5.0, 1.6, 5.0),
+		"visuals": [
+			{"type": "box", "size": Vector3(0.25, 1.0, 0.8), "pos": Vector3(0, -0.3, -0.8), "mat": "paint_dark"},
+			{"type": "box", "size": Vector3(0.25, 1.0, 0.8), "pos": Vector3(0, -0.3, 0.8), "mat": "paint_dark"},
+			{"type": "cyl", "name": "Dome", "axis": "y", "r": 2.5, "len": 0.5, "pos": Vector3(0, 0.45, 0), "mat": "paint", "color": Color(0.9, 0.9, 0.88)},
+			{"type": "box", "parent": "Dome", "size": Vector3(4.6, 0.52, 0.6), "mat": "dark"},
+		],
+		"colliders": [{"type": "box", "size": Vector3(5.0, 1.0, 5.0), "pos": Vector3(0, 0.3, 0)}],
+		"modules": [
+			{"type": "radar", "range": 80000.0, "cone_deg": 180.0},
+			{"type": "body_drag", "front_area": 1.3, "side_area": 2.5, "cd_front": 0.3},
+		],
+	}
+	# kuyruk taret yuvası: gövdenin en arkasına; arkaya bakan çift namlulu otomatik taret
+	_defs["tail_turret"] = {
+		"title": "Kuyruk Tareti (otomatik topçu)", "category": "gövde", "mass": 320.0, "hp": 160.0, "cost": 2600,
+		"size": Vector3(1.3, 1.3, 2.0),
+		"visuals": [{"type": "lathe", "mat": "paint", "profile": [
+			Vector2(-1.0, 0.65), Vector2(-0.2, 0.58), Vector2(0.6, 0.42), Vector2(1.0, 0.3), Vector2(1.0, 0.0)]}],
+		"colliders": [{"type": "cyl", "r": 0.55, "len": 1.9}],
+		"modules": [
+			{"type": "tail_turret", "ammo": 1200},
+			{"type": "body_drag", "front_area": 1.33, "side_area": 2.0, "cd_front": 0.04},
+		],
+	}
+
 
 ## Ayarlanabilir kanadın hazır biçimleri (yarım kanat, dünya ölçeğinden önceki birimlerle).
 ## sweep: dış panelin hücum kenarı ok açısı (°, eksi = ters ok); crank: kırılma noktası

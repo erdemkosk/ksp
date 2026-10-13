@@ -93,6 +93,8 @@ func take_damage(amount: float) -> void:
 			_turret.position += Vector3(randf_range(-1, 1), 0.8, randf_range(-1, 1))
 			_turret.rotation_degrees = Vector3(randf_range(-25, 25), randf_range(0, 360), randf_range(-25, 25))
 		_on_destroyed()
+		if team == "düşman":
+			Crew.note_target_destroyed(self)   # madalya sayacı (Kara Kartalı / Gemi Avcısı)
 		var smoke := Effects.smoke_column()
 		add_child(smoke)
 		smoke.position = Vector3(0, 2, 0)
@@ -122,6 +124,10 @@ func threat_point() -> Variant:
 	return global_position + _threat_rel if alerted() else null
 
 
+## Alarm geldiğinde (ilk kez) çağrılır — düşman üssü avcı kaldırır vb.
+var alerted_cb: Callable
+
+
 ## Bu birime alarm ver.
 func alarm(threat: Vector3, hit := false) -> void:
 	if destroyed:
@@ -130,6 +136,8 @@ func alarm(threat: Vector3, hit := false) -> void:
 	alert_t = alert_time
 	_threat_rel = threat - global_position
 	_on_alert(first, hit)
+	if first and alerted_cb.is_valid():
+		alerted_cb.call()
 
 
 ## Yarıçap içindeki aynı takımdan tüm birimleri (kendisi dahil) uyar.

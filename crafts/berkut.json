@@ -13,7 +13,7 @@
 		{"part": "canard",         "pos": [1.35, 0.3, -3.3], "mirror": true},
 		{"part": "wing_custom",    "pos": [2.95, -0.15, -0.952], "rot": [1, 0, 0], "mirror": true,
 			"wing": {"span": 4.6, "root": 2.8, "tip": 1.4, "sweep": -25.0, "thick": 0.06, "crank": 0.0, "crank_sweep": 0.0}},
-		{"part": "elevon",         "pos": [2.0, -0.15, 0.88], "mirror": true},
+		{"part": "elevon",         "pos": [2.2, -0.15, -0.33], "rot": [0, 37.6, 0], "mirror": true},
 		{"part": "missile_rail",   "pos": [2.6, -0.45, -1.2], "mirror": true},
 		{"part": "gun_pod",        "pos": [0.72, -0.35, -3.0]},
 		{"part": "flare_pod",      "pos": [0, -0.78, 0.6]},

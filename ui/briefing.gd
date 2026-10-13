@@ -25,7 +25,7 @@ static func open(parent: Node, id: String, craft_name: String, start: Callable) 
 	b.add_theme_stylebox_override("panel", sb)
 	parent.add_child(b)
 	b._build(craft_name)
-	b.popup_centered(Vector2i(1060, 600))
+	b.popup_centered(Vector2i(1060, 700 if id == "gen" else 600))
 	b.popup_hide.connect(b.queue_free)
 	return b
 
@@ -60,6 +60,23 @@ func _build(craft_name: String) -> void:
 	brief.custom_minimum_size.x = 430
 	brief.add_theme_color_override("font_color", Color(0.82, 0.86, 0.9))
 	col.add_child(brief)
+	if mission_id == "gen":
+		# üretilmiş görev: isteğin kısıtları ve düşman doktrini (istihbarat)
+		var card := GenMission.card_now()
+		col.add_child(UiTheme.title("İSTEK", 14))
+		for l: String in MissionGen.constraint_lines(card):
+			var cl := Label.new()
+			cl.text = "■  " + l
+			cl.add_theme_color_override("font_color", Color(0.85, 0.92, 1.0))
+			col.add_child(cl)
+		var tt := MissionGen.threat_text(card)
+		for l: String in ([("Tehdit: " + tt)] if tt != "" else []) + Array(card.get("doctrine", [])):
+			var dl := Label.new()
+			dl.text = l
+			dl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			dl.custom_minimum_size.x = 430
+			dl.add_theme_color_override("font_color", Color(1.0, 0.66, 0.45))
+			col.add_child(dl)
 	col.add_child(UiTheme.title("HEDEFLER", 14))
 	for o in info["objectives"]:
 		var l := Label.new()

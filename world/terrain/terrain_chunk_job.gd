@@ -224,3 +224,29 @@ static func _up_basis(up: Vector3) -> Basis:
 
 static func _rand(f: int, i: int, j: int, k: int) -> float:
 	return float(hash(Vector4i(f, i, j, k)) & 0xFFFFFF) / float(0xFFFFFF)
+
+
+## İş parçacığında: run() + ağaç/ev dönüşümlerini MultiMesh tamponuna çevir (ana iş parçacığında
+## binlerce set_instance_transform çağrısı parça yüklenirken takılma yapıyordu).
+var conifer_buf := PackedFloat32Array()
+var broadleaf_buf := PackedFloat32Array()
+var house_buf := PackedFloat32Array()
+
+func run_all() -> void:
+	run()
+	conifer_buf = _pack(conifers)
+	broadleaf_buf = _pack(broadleaves)
+	house_buf = _pack(houses)
+
+
+static func _pack(ts: Array[Transform3D]) -> PackedFloat32Array:
+	var b := PackedFloat32Array()
+	b.resize(ts.size() * 12)
+	var i := 0
+	for t in ts:
+		var bs := t.basis
+		b[i] = bs.x.x; b[i + 1] = bs.y.x; b[i + 2] = bs.z.x; b[i + 3] = t.origin.x
+		b[i + 4] = bs.x.y; b[i + 5] = bs.y.y; b[i + 6] = bs.z.y; b[i + 7] = t.origin.y
+		b[i + 8] = bs.x.z; b[i + 9] = bs.y.z; b[i + 10] = bs.z.z; b[i + 11] = t.origin.z
+		i += 12
+	return b

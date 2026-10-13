@@ -5,7 +5,7 @@ extends RefCounted
 ## ivmesini hesaba katan öncül nişan, nişan oturunca kısa seriler (seri başına küçük nişancı
 ## hatası), izli mermi ve namlu alevi. Mermileri ProjectileManager uçurur.
 
-var unit: GroundTarget
+var unit: Node3D        ## sahibi (yer birimi ya da uçak: kuyruk tareti); kendi mermisi ona çarpmaz
 var yaw_node: Node3D                 ## gövdeye göre y ekseninde döner
 var pitch_node: Node3D               ## yaw_node çocuğu; x ekseninde yükselir, namlular -z yönünde
 var muzzles: Array[Vector3] = []     ## pitch_node yerelinde namlu ağızları (sırayla ateşler)
@@ -42,7 +42,7 @@ var _flash: MeshInstance3D
 var _flash_t := 0.0
 
 
-func _init(u: GroundTarget, yaw: Node3D, pitch: Node3D, muzzle_pts: Array[Vector3]) -> void:
+func _init(u: Node3D, yaw: Node3D, pitch: Node3D, muzzle_pts: Array[Vector3]) -> void:
 	unit = u
 	yaw_node = yaw
 	pitch_node = pitch

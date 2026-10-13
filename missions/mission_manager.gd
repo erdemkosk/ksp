@@ -34,6 +34,9 @@ const DEFS := [
 	{"id": "kargo", "title": "Yardım Bırakma", "level": 2,
 		"brief": "Selden etkilenen köye yardım: sandıkları turuncu bölgeye (150 m) paraşütle bırak, en az 3 tanesi bölgeye inmeli. V ile KARGO'yu seç; sarı halka sandığın ineceği yer, Space bırakır. Gerekli: kargo bölmesi (örn. Katır).",
 		"start": "runway_hot", "civil": true},
+	{"id": "nakliye", "title": "Ağır Nakliye (kargo, A→B)", "level": 2,
+		"brief": "Kuzey Havaalanı'ndaki birliğe malzeme götür: en az 8 sandık kargoyla Ana Üs'ten kalk, Kuzey Havaalanı'na (~30 km kuzeybatı) in ve dur. Yer ekibi sandıkları tek tek boşaltır (uçak durmalı). Ağır yüklü uçak uzun koşuyla kalkar, geç döner — yumuşak in. Gerekli: kargo bölmeleri (örn. Herkül C-130).",
+		"start": "runway_hot", "civil": true},
 	{"id": "heli", "title": "Helikopter Avı", "level": 2,
 		"brief": "İki düşman saldırı helikopteri Dereköy (~23 km kuzey) çevresinde alçakta devriye geziyor. İkisini de düşür. Helikopterler radarda görünmez, yavaş ve alçaktır; yaklaşırsan sana dönüp topla ateş ederler.",
 		"start": "air", "alt": 1200.0, "z": -6000.0},
@@ -46,6 +49,33 @@ const DEFS := [
 	{"id": "ustunluk", "title": "Hava Üstünlüğü", "level": 3,
 		"brief": "Üç düşman avcı iki dalga hâlinde geliyor: önce bir, sonra iki. Hepsini düşür ve hayatta kal.",
 		"start": "air", "alt": 2500.0, "z": 2000.0},
+	{"id": "sead", "title": "SEAD — SAM Avı", "level": 3,
+		"brief": "Kuzeyde uzun menzilli bir SAM bataryası (40 km: fırlatıcı + arama radarı + takip radarı), iki kısa menzilli SAM ve bir erken uyarı radarı hava sahasını kapatıyor. Bütün radarları ve rampaları yok et. Radar avcısı füze (HARM) yayına kilitlenir: arama radarı ölürse batarya kör kalır, takip radarı ölürse füze atamaz. Alçaktan, araziye saklanarak yaklaş (Shift+U: arazi takibi), chaff (Ş) ve ECM işe yarar.",
+		"start": "air", "alt": 3000.0, "z": 16000.0},
+	{"id": "derin", "title": "Derin Saldırı", "level": 3,
+		"brief": "Kuzeybatıdaki üç mühimmat deposunu yok et ve üsse dön. Yolda bir erken uyarı radarı var: seni görürse düşman üssü avcı kaldırır ve bir AWACS seni izler. Radarın altından gir: yerden 100 m'de vadileri izle (Shift+U), dağların arkasında kal. HUD'daki GÖRÜNÜYORSUN / GİZLİ ışığına bak. Hedefte uçaksavar ve omuzdan atılan SAM'lar (RWR'da görünmez!) var: flare (O) hazır tut.",
+		"start": "air", "alt": 600.0, "z": 2000.0},
+	{"id": "ussaldiri", "title": "Havaalanı Baskını", "level": 3,
+		"brief": "Kuzeydeki düşman havaalanını devre dışı bırak: pistin üç bölümünden en az ikisini kes (1000 kg bomba, misket ya da bomba bölmesi) ve park etmiş uçaklarla hangarlardan beşini yok et. Alarm verilince pist sağlamsa avcılar kalkar — önce pisti kes. Üssü uçaksavar, SAM ve omuzdan atılan SAM'lar koruyor; erken uyarı radarı yaklaşanı görür.",
+		"start": "air", "alt": 900.0, "z": -2000.0},
+	{"id": "uzak", "title": "Uzaktan Vuruş", "level": 3,
+		"brief": "Haritanın kuzeybatı köşesindeki komuta sığınağını uzaktan vur. Sığınağı uzun menzilli bir SAM (40 km) koruyor: içine girme. Seyir füzesi (110 km) ya da süzülen bomba (yüksekten 25–40 km) gerekir: haritayı aç (M), sığınağa sol tıkla (GPS hedefi), menzildeyken bırak. SAM seyir füzesini de vurabilir — iki füze at ya da arazinin arkasından yaklaştır.",
+		"start": "air", "alt": 7000.0, "z": 15000.0},
+	{"id": "deniz", "title": "Deniz Saldırısı", "level": 3,
+		"brief": "Kıyı açığında iki düşman korveti seyrediyor. Her birinin arama radarı (30 km, RWR'da G), radar güdümlü SAM'ı (12 km) ve yakın savunma topları (gelen füzeyi de düşürebilir) var. Gemi savar füze (70 km) en iyisi: denizin 15 m üstünde uçar, hedefe yaklaşınca kendi radarını açar. İki gemiyi de batır.",
+		"start": "air", "alt": 1500.0, "z": 2000.0},
+	{"id": "filo", "title": "Filo Baskını", "level": 3, "bonus": 15000,
+		"brief": "Düşman uçak gemisi kuzeydoğu açıklarında bir muhrip ve bir korvetin refakatinde seyrediyor. Gemi seni radarıyla (45 km, RWR'da CV) 28 km içinde görürse ya da alarm alırsa güvertesinden avcı kaldırır (havada en çok iki). Muhribin 76 mm topu 6.5 km içinde uçaksavar mermisi atar, SAM'ları 16 km. Uçak gemisini batır: çok sayıda gemi savar füzesi (70 km) ya da ağır bomba gerekir. Refakatleri batırmak şart değil ama önce onları susturmak işini kolaylaştırır.",
+		"start": "air", "alt": 1500.0, "z": 2000.0},
+	{"id": "firkateyn", "title": "Fırkateyn Avı", "level": 3, "bonus": 5000,
+		"brief": "Dereköy açıklarında iki düşman fırkateyni devriye geziyor. Her birinin arama radarı (40 km, RWR'da DD), 16 radar güdümlü SAM'ı (16 km), iki yakın savunma topu ve 6.5 km menzilli 76 mm baş topu var. Gemi savar füzeyi menzil dışından at, iki füze at (CIWS birini düşürebilir); yaklaşman gerekirse denizin üstünde alçak uç. İki fırkateyni de batır.",
+		"start": "air", "alt": 1500.0, "z": -2000.0},
+	{"id": "devriye", "title": "Deniz Devriyesi", "level": 2,
+		"brief": "Üç düşman akıncı korveti kuzeydoğudan Güney Sahili'ne doğru iniyor; kıyıya ulaşırlarsa limanı topa tutacaklar. Hepsini kıyıya (turuncu nokta, 3 km) varmadan batır. Korvetlerin radarı 30 km, SAM'ı 12 km, CIWS'leri gelen füzeyi düşürebilir. Gemi savar füze ya da bomba kullan.",
+		"start": "air", "alt": 1500.0, "z": 2000.0},
+	{"id": "sondarbe", "title": "Son Darbe", "level": 3, "bonus": 20000,
+		"brief": "Düşman karargâhı Kuzey Havaalanı'nın (~30 km kuzeybatı) üzerinde Kara Doğan ve iki eskortu devriye uçuyor. Kara Doğan'ı düşür: bu sefer kaçmayacak. Eskortlar isteğe bağlı. Onu yüksekte ve süratte yenmek zor; uçağını ona göre tasarla.",
+		"start": "air", "alt": 4500.0, "z": -2000.0},
 ]
 
 const RING_RADIUS := 55.0
@@ -53,6 +83,12 @@ const SAHIN_B := "res://crafts/sahin_b.json"
 const SAM_SITES := [Vector2(5300, -19600), Vector2(7400, -20600)]
 const TANKER_SPEED := 135.0
 const REFUEL_GOAL := 1500
+const LR_SAM := Vector2(-6000, -24000)
+const EW_SITE := Vector2(-6000, -27500)
+const DEPOTS := [Vector2(-21000, -17000), Vector2(-21800, -17600), Vector2(-20400, -17900)]
+const BUNKER := Vector2(-30000, -27000)
+
+var _airbase: EnemyAirbase
 
 var main: Node
 var def := {}
@@ -85,9 +121,14 @@ var _last_vs := 0.0
 var _airborne_t := 0.0
 var _inside := 0
 var _tanker: Vessel
+## Üretilmiş görev (Game.mission = "gen") ve alışkanlık / sonuç kaydı
+var gen: GenMission
+var tracker: Doctrine.Tracker
 
 
 static func get_def(id: String) -> Dictionary:
+	if id == "gen":
+		return MissionGen.def_for(GenMission.card_now())
 	for d in DEFS:
 		if d["id"] == id:
 			return d
@@ -125,7 +166,14 @@ func _ready() -> void:
 
 ## main.gd, uçak doğduktan sonra çağırır.
 func setup() -> void:
+	if not def.is_empty():
+		tracker = Doctrine.Tracker.new()
+		tracker.mm = self
+		add_child(tracker)
 	match def.get("id", ""):
+		"gen":
+			gen = GenMission.new(self)
+			gen.setup()
 		"egitim":
 			objectives = [_obj("Kalkış yap"), _obj("Halkalardan geç (0/4)"), _obj("Piste in ve dur")]
 			var ring_pts := [Vector3(-1500, 500, -4500), Vector3(2500, 800, -7500), Vector3(5500, 900, -3500), Vector3(2500, 450, 3500)]
@@ -172,6 +220,77 @@ func setup() -> void:
 						m.fuel = m.capacity * 0.25
 				main.vessel.recalc_mass()
 				_spawn_tanker(Vector3(0, 2600, 3000 - 1800))
+		"sead":
+			objectives = [_obj("SAM radarları ve rampaları (0/7)"), _obj("Hayatta kal")]
+			_clear_static_targets()
+			var lr := SamSite.create_long_range()
+			_add_unit(lr[0], LR_SAM)
+			_add_unit(lr[1], LR_SAM + Vector2(70, 30))
+			_add_unit(lr[2], LR_SAM + Vector2(-55, 40))
+			for p: Vector2 in [Vector2(-3000, -20000), Vector2(-9500, -21000)]:
+				_add_unit(SamSite.create_sam(Vector3.ZERO, 0.0), p)
+				_add_unit(AaaGun.create_aaa(Vector3.ZERO, 0.0), p + Vector2(300, 200))
+			_add_unit(RadarStation.create_station(), EW_SITE)
+			_add_unit(Manpads.create_team(), Vector2(-4500, -18000))
+		"derin":
+			objectives = [_obj("Mühimmat depoları (0/3)"), _obj("Üsse dön (3 km)")]
+			_clear_static_targets()
+			var ew := RadarStation.create_station()
+			_add_unit(ew, Vector2(-3000, -15000))
+			for i in DEPOTS.size():
+				var dp := _depot()
+				_add_unit(dp, DEPOTS[i])
+			_add_unit(SamSite.create_sam(Vector3.ZERO, 0.0), DEPOTS[1] + Vector2(500, 300))
+			for p: Vector2 in [DEPOTS[0] + Vector2(250, -200), DEPOTS[2] + Vector2(-200, 250)]:
+				_add_unit(AaaGun.create_aaa(Vector3.ZERO, 0.0), p)
+			for p: Vector2 in [DEPOTS[0] + Vector2(-600, 900), DEPOTS[2] + Vector2(800, -400), Vector2(-9000, -14000)]:
+				_add_unit(Manpads.create_team(), p)
+			_airbase = EnemyAirbase.build(self, Vector2(-26000, -27000), Vector2(-17000, -21000), 31)
+			ew.spotted.connect(func(_v: Vessel) -> void: _airbase._on_alert())
+			_spawn_awacs(Vector3(-6000, 6500, -29000))
+		"ussaldiri":
+			objectives = [_obj("Pisti kes (0/2 bölüm)"), _obj("Uçak ve hangar (0/5)"), _obj("Hayatta kal")]
+			_clear_static_targets()
+			_airbase = EnemyAirbase.build(self, Vector2(-18000, -29000), Vector2(-6000, -20000), 53)
+		"uzak":
+			objectives = [_obj("Komuta sığınağını yok et"), _obj("Uzun menzilli SAM'a (40 km) girme")]
+			_clear_static_targets()
+			var bk := _depot("Komuta sığınağı", 2400.0)
+			_add_unit(bk, BUNKER)
+			var lr2 := SamSite.create_long_range()
+			_add_unit(lr2[0], BUNKER + Vector2(1800, 1500))
+			_add_unit(lr2[1], BUNKER + Vector2(1870, 1530))
+			_add_unit(lr2[2], BUNKER + Vector2(1745, 1540))
+			for p: Vector2 in [BUNKER + Vector2(300, 200), BUNKER + Vector2(-250, -300)]:
+				_add_unit(AaaGun.create_aaa(Vector3.ZERO, 0.0), p)
+			var has := false
+			for m in main.vessel.modules:
+				if (m is MissileModule and m.guidance == "cruise") or (m is BombModule and m.kind == "glide"):
+					has = true
+			if not has:
+				_pending_fail = "Uçakta seyir füzesi ya da süzülen bomba yok (hangarda tak)"
+		"deniz":
+			objectives = [_obj("Savaş gemileri (0/2)"), _obj("Hayatta kal")]
+			var sea := _sea_points(2)
+			for i in sea.size():
+				var sh := Warship.create_ship("Düşman korveti %d" % (i + 1))
+				sh.heading = randf() * TAU
+				_add_unit(sh, sea[i])
+		"filo":
+			objectives = [_obj("Uçak gemisi (0/1)"), _obj("Hayatta kal")]
+			for s in NavalGroup.spawn(main.world, "carrier", NavalGroup.FLEET_ROUTE, NavalGroup.FLEET_XZ):
+				s.objective = s is Carrier
+				if s is Carrier:
+					s.launched.connect(func(e: Vessel) -> void: _enemies.append(e))
+		"firkateyn":
+			objectives = [_obj("Fırkateynler (0/2)"), _obj("Hayatta kal")]
+			NavalGroup.spawn(main.world, "destroyers", NavalGroup.HUNT_ROUTE, NavalGroup.HUNT_XZ)
+		"devriye":
+			objectives = [_obj("Akıncı korvetler (0/3)"), _obj("Kıyıya ulaşmalarına izin verme")]
+			var raid_route: Array[Vector2] = [NavalGroup.RAID_XZ, NavalGroup.RAID_GOAL]
+			NavalGroup.spawn(main.world, "raiders", raid_route)
+			_site = Vector3(NavalGroup.RAID_GOAL.x, 0.0, NavalGroup.RAID_GOAL.y)
+			_mark_site(_site, false)
 		"onleme":
 			objectives = [_obj("Bombardıman 1"), _obj("Bombardıman 2"), _obj("Üssü koru")]
 			for i in 2:
@@ -199,6 +318,11 @@ func setup() -> void:
 			_mark_site(_site, true)
 			if main.vessel.passenger_seats() < 3:
 				_pending_fail = "Uçakta yolcu kabini yok (en az 3 koltuk)"
+		"nakliye":
+			_freight_total = main.vessel.cargo_left()
+			objectives = [_obj("Kuzey Havaalanı'na in ve dur"), _obj("Yükü boşalt (0/%d)" % _freight_total)]
+			if _freight_total < 8:
+				_pending_fail = "Uçakta en az 8 sandık kargo yok (kargo bölmesi tak — örn. Herkül)"
 		"kargo":
 			objectives = [_obj("Sandıklar bölgede (0/3)")]
 			_site = _find_flat(7000.0, 12000.0, 23)
@@ -208,6 +332,7 @@ func setup() -> void:
 			else:
 				main.vessel.selected_weapon = Vessel.WEAPON_CARGO
 	_message("GÖREV: " + def.get("title", ""), 4.0)
+	Ace.attach(self)   # düşman ası (Campaign: kameo / av / final)
 
 
 func _obj(text: String) -> Dictionary:
@@ -241,6 +366,64 @@ func _spawn_enemy(p: Vector3, heading_deg: float, skill: float, aggressive: bool
 	e.add_child(ai)
 	_enemies.append(e)
 	return e
+
+
+## Mühimmat deposu / sığınak: yarı gömülü beton yapı (hedef).
+func _depot(title := "Mühimmat deposu", hp_value := 1500.0) -> GroundTarget:
+	var d := RadarStation.make_truck(title, hp_value)
+	for c in d.get_children():
+		c.queue_free()
+	var bunker := title != "Mühimmat deposu"
+	d._hull = GroundTarget._mesh(d, Vector3(22, 6, 14) if bunker else Vector3(18, 5, 30), Vector3(0, 2.5, 0), Color(0.5, 0.5, 0.46) if bunker else Color(0.36, 0.4, 0.3))
+	var roof := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 7.0 if bunker else 9.0
+	cyl.bottom_radius = cyl.top_radius
+	cyl.height = 22.0 if bunker else 30.0
+	roof.mesh = cyl
+	roof.rotation_degrees = Vector3(0, 0, 90) if bunker else Vector3(90, 0, 0)
+	roof.scale = Vector3(1, 1, 0.35)
+	roof.position = Vector3(0, 5.0, 0)
+	roof.material_override = SamSite._mat(Color(0.42, 0.45, 0.36))
+	d.add_child(roof)
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(22, 9, 30)
+	cs.shape = box
+	cs.position = Vector3(0, 4.5, 0)
+	d.add_child(cs)
+	return d
+
+
+## Düşman AWACS: yüksekte yarış pisti çizer, 80 km'de gördüğünü takımına bildirir.
+func _spawn_awacs(p: Vector3) -> Vessel:
+	var e := _spawn_enemy(p, 90.0, 0.4, false, "Düşman AWACS", "res://crafts/awacs.json")
+	e.set_meta("awacs", true)
+	for c in e.get_children():
+		if c is AIPilot:
+			c.leg_time = 120.0
+			c.speed = 150.0
+	return e
+
+
+## Haritada derin deniz noktaları (kıyıdan uzak, birbirine ~3 km), üsten en az 15 km.
+static func _sea_points(n: int) -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 909
+	for i in 3000:
+		var p := Vector2(rng.randf_range(FlightMap.WORLD_LO.x, FlightMap.WORLD_HI.x), rng.randf_range(FlightMap.WORLD_LO.y, FlightMap.WORLD_HI.y))
+		if p.length() < 15000.0 or TerrainGen.height(Vector3(p.x, Planet.RADIUS, p.y).normalized()) > -30.0:
+			continue
+		if out.is_empty() or (p.distance_to(out[0]) > 2000.0 and p.distance_to(out[0]) < 6000.0):
+			out.append(p)
+		if out.size() >= n:
+			break
+	if out.is_empty():
+		out.append(Vector2(15000, 8000))
+	while out.size() < n:
+		out.append(out[0] + Vector2(3000, 0))
+	return out
 
 
 ## Dost tanker: Katır gövdesi, sivil boya, kuzeye düz ve sabit hızla uçar; uzun ayaklarla
@@ -378,6 +561,23 @@ func _physics_process(delta: float) -> void:
 			_check_units(v, "SAM rampaları", "SAM", func(n: Node) -> bool: return n is SamSite)
 		"ikmal":
 			_check_refuel(v)
+		"sead":
+			_check_units(v, "SAM radarları ve rampaları", "SAM", func(n: Node) -> bool:
+				return n is SamSite or n is RadarStation or String(n.unit_name).begins_with("SAM"))
+		"derin":
+			_check_deep(v)
+		"ussaldiri":
+			_check_airbase(v)
+		"uzak":
+			_check_standoff(v)
+		"deniz":
+			_check_units(v, "Savaş gemileri", "GEMİ", func(n: Node) -> bool: return n is Warship)
+		"filo":
+			_check_units(v, "Uçak gemisi", "UÇAK GEMİSİ", func(n: Node) -> bool: return n is Carrier)
+		"firkateyn":
+			_check_units(v, "Fırkateynler", "FIRKATEYN", func(n: Node) -> bool: return n is Frigate)
+		"devriye":
+			_check_raid(v)
 		"onleme":
 			_check_intercept(v)
 		"it":
@@ -392,8 +592,86 @@ func _physics_process(delta: float) -> void:
 			_check_rescue(v, delta)
 		"kargo":
 			_check_cargo(v)
+		"nakliye":
+			_check_freight(v, delta)
+		"gen":
+			gen.check(v, delta)
 	if def.has("time") and elapsed > def["time"] and state == "running":
 		_finish(false, "Süre doldu")
+
+
+## Derin saldırı: üç depo, sonra üsse dönüş.
+func _check_deep(v: Vessel) -> void:
+	if not objectives[0]["done"]:
+		var dead := 0
+		var nearest: Variant = null
+		var nd := INF
+		for n in main.world.get_children():
+			if n is GroundTarget and n.unit_name == "Mühimmat deposu":
+				if n.destroyed:
+					dead += 1
+				elif n.global_position.distance_to(v.com_global()) < nd:
+					nd = n.global_position.distance_to(v.com_global())
+					nearest = n.global_position
+		objectives[0]["text"] = "Mühimmat depoları (%d/3)" % dead
+		nav_point = nearest
+		nav_label = "DEPO"
+		if dead >= 3:
+			objectives[0]["done"] = true
+			_message("Depolar yok edildi — üsse dön!", 4.0)
+		return
+	nav_point = world_point(0, 600, 300.0)
+	nav_label = "ANA ÜS"
+	if _near_base(v, 3000.0):
+		objectives[1]["done"] = true
+		_finish(true, "Derin saldırı tamamlandı")
+
+
+## Deniz devriyesi: akıncılar kıyıya (RAID_GOAL, 3 km) varmadan batmalı.
+func _check_raid(v: Vessel) -> void:
+	var goal := world_point(NavalGroup.RAID_GOAL.x, NavalGroup.RAID_GOAL.y, 0.0)
+	for sh in Warship.ships:
+		if is_instance_valid(sh) and not sh.destroyed and sh.objective and sh.global_position.distance_to(goal) < 3000.0:
+			_finish(false, "Akıncılar kıyıya ulaştı")
+			return
+	_check_units(v, "Akıncı korvetler", "AKINCI", func(n: Node) -> bool: return n is Warship)
+
+
+## Havaalanı baskını: pistin en az iki bölümü + beş uçak / hangar.
+func _check_airbase(_v: Vessel) -> void:
+	if not is_instance_valid(_airbase):
+		return
+	var cut := 0
+	for s in _airbase.runway:
+		if s.destroyed:
+			cut += 1
+	var planes := 0
+	for u in _airbase.units:
+		if u.destroyed and (u in _airbase.parked or u.unit_name == "Uçak hangarı"):
+			planes += 1
+	objectives[0]["text"] = "Pisti kes (%d/2 bölüm)" % mini(cut, 2)
+	objectives[1]["text"] = "Uçak ve hangar (%d/5)" % mini(planes, 5)
+	objectives[0]["done"] = cut >= 2
+	objectives[1]["done"] = planes >= 5
+	nav_point = _airbase.runway[0].global_position if not objectives[0]["done"] else _airbase.parked[0].global_position
+	nav_label = "PİST" if not objectives[0]["done"] else "APRON"
+	if objectives[0]["done"] and objectives[1]["done"]:
+		objectives[2]["done"] = true
+		_finish(true, "Düşman üssü devre dışı")
+
+
+## Uzaktan vuruş: sığınak; uzun menzilli SAM'a 25 km'den fazla yaklaşma uyarısı.
+func _check_standoff(v: Vessel) -> void:
+	for n in main.world.get_children():
+		if n is GroundTarget and n.unit_name == "Komuta sığınağı":
+			nav_point = n.global_position
+			nav_label = "SIĞINAK"
+			var d: float = n.global_position.distance_to(v.com_global())
+			objectives[1]["done"] = d > 40000.0
+			if n.destroyed:
+				objectives[0]["done"] = true
+				_finish(true, "Sığınak uzaktan vuruldu")
+			return
 
 
 func _enemy_dead(e: Vessel) -> bool:
@@ -406,11 +684,13 @@ func _count_kills() -> void:
 		if _enemy_dead(e):
 			n += 1
 	if n > kills:
-		for i in n - kills:
+		# kanat adamının düşürdükleri hedefe sayılır ama oyuncuya yazılmaz
+		var wing := WingFlight.take_kills(n - kills)
+		for i in n - kills - wing:
 			Crew.add_kill()
-		if main.radio:
+		if main.radio and n - kills > wing:
 			main.radio.on_kill()
-		_message("DÜŞMAN DÜŞÜRÜLDÜ!  +40 XP", 2.5)
+		_message("DÜŞMAN DÜŞÜRÜLDÜ!  +40 XP" if n - kills > wing else "KANAT 2 DÜŞÜRDÜ!", 2.5)
 		Sfx.play_ui("lock_tone.ogg", -6.0, 1.3)
 	kills = n
 
@@ -565,12 +845,27 @@ func _finish(success: bool, reason: String) -> void:
 		return
 	state = "success" if success else "fail"
 	Crew.award(int(def.get("level", 1)) * 60 + 20 if success else 10, "ucus")
-	money_gain = Career.mission_finished(String(def["id"]), int(def.get("level", 1)), success)
+	if is_instance_valid(main.vessel):
+		Crew.note_mission(success, String(def.get("id", "")), main.vessel.global_position)
+	# büyük hedef primi (uçak gemisi vb.): ödülün üstüne
+	var bonus := int(def.get("bonus", 0)) if success and not Career.sandbox() and not Game.test_flight else 0
+	Career.money += bonus
+	Career.total_earned += bonus
+	money_gain = Career.mission_finished(String(def["id"]), int(def.get("level", 1)), success) + bonus
 	fail_reason = reason
 	nav_point = null
+	if is_instance_valid(tracker):
+		var notes: Array = gen.notes.duplicate() if gen else []
+		if reason != "":
+			notes.append(reason)
+		tracker.finalize(success, notes)
 	Sfx.play_ui("lock_tone.ogg" if success else "caution_beep.ogg", -4.0, 1.0 if success else 0.7)
 	print("GÖREV %s: %s  süre=%.0f sn  düşürülen=%d  %s" % [def["id"], "BAŞARILI" if success else "BAŞARISIZ", elapsed, kills, reason])
-	if Game.args.has("missiontest"):
+	if Game.args.has("missiontest") or Game.args.has("genflighttest"):
+		if Game.args.has("genflighttest"):
+			var lr := Game.last_result.duplicate()
+			lr.erase("card")
+			print("GENFLIGHT result ", lr)
 		get_tree().quit()
 		return
 	# sonuç ekranı uçak yere inip durunca (pilot öldüyse hemen)
@@ -969,8 +1264,43 @@ func _check_transfer(v: Vessel, delta: float) -> void:
 		_finish(true, "")
 
 
+var _freight_total := 0
+var _unload_t := 0.0
+
+
+## Ağır nakliye: Kuzey Havaalanı'na in ve dur; yer ekibi sandıkları tek tek indirir (uçak
+## durdukça her 1.2 sn bir sandık). Hepsi inince görev biter. Uçak kalkarsa boşaltma bekler.
+func _check_freight(v: Vessel, delta: float) -> void:
+	var af: Dictionary = TerrainGen.AIRFIELDS[1]
+	var xz: Vector2 = af["xz"]
+	nav_point = world_point(xz.x, xz.y, float(af["elev"]) + 2.0)
+	nav_label = "KUZEY HAVAALANI"
+	var parked := _grounded(v) and v.ground_speed() < 2.0 and _horiz_dist(v, nav_point) < 1500.0
+	if parked and not objectives[0]["done"]:
+		objectives[0]["done"] = true
+		_message("Yer ekibi geliyor — yük boşaltılıyor, uçağı oynatma", 3.0)
+	if not objectives[0]["done"] or not parked:
+		return
+	_unload_t += delta
+	if _unload_t < 1.2:
+		return
+	_unload_t = 0.0
+	for m in v.modules:
+		if m is CargoModule and m.crates > 0:
+			m.crates -= 1
+			Sfx.play_at("hydraulic_thunk.ogg", m.part.global_position, -6.0, randf_range(0.9, 1.1), 200.0)
+			break
+	var done := _freight_total - v.cargo_left()
+	objectives[1]["text"] = "Yükü boşalt (%d/%d)" % [done, _freight_total]
+	if v.cargo_left() <= 0:
+		objectives[1]["done"] = true
+		_finish(true, "")
+
+
 ## Brifing için görev noktaları ve hedef özeti (harita: [ad, yüzey xz, renk]).
 static func briefing(id: String) -> Dictionary:
+	if id == "gen":
+		return GenMission.briefing_info(GenMission.card_now())
 	var red := Color(1.0, 0.35, 0.3)
 	var gold := Color(1.0, 0.82, 0.3)
 	var green := Color(0.45, 1.0, 0.6)
@@ -1014,9 +1344,41 @@ static func briefing(id: String) -> Dictionary:
 			var s := _find_flat(7000.0, 12000.0, 23)
 			pts = [["Bırakma bölgesi", Vector2(s.x, s.z), red]]
 			obj = ["En az 3 sandığı 150 m bölgeye bırak"]
+		"nakliye":
+			pts = [["Ana Üs (yük)", Vector2(0, 0), gold], ["Kuzey Havaalanı (teslim)", TerrainGen.AIRFIELDS[1]["xz"], green]]
+			obj = ["En az 8 sandık kargoyla kalk", "Kuzey Havaalanı'na in ve dur", "Yer ekibi boşaltırken bekle"]
 		"tasima":
 			pts = [["Ovaköy", Towns.town_point("Ovaköy"), gold], ["Varış", TerrainGen.AIRFIELDS[1]["xz"], green]]
 			obj = ["Ovaköy üzerinden geç", "Kuzey Havaalanı'na in ve dur", "Konforu %40 üstünde tut"]
+		"sead":
+			pts = [["Uzun menzilli SAM (40 km)", LR_SAM, red], ["SAM", Vector2(-3000, -20000), red], ["SAM", Vector2(-9500, -21000), red],
+				["Erken uyarı", EW_SITE, gold], ["Sen", Vector2(0, 16000), green]]
+			obj = ["Uzun menzilli bataryayı (fırlatıcı, arama + takip radarı), iki SAM'ı ve radarı yok et", "Radar avcısı füze yayına kilitlenir", "Alçak uç, chaff (Ş), ECM"]
+		"derin":
+			pts = [["Depolar", DEPOTS[0], red], ["Erken uyarı radarı", Vector2(-3000, -15000), gold], ["Düşman üssü", Vector2(-21500, -24000), red], ["Sen", Vector2(0, 2000), green]]
+			obj = ["Üç mühimmat deposunu yok et", "Erken uyarı radarına görünme (Shift+U: arazi takibi)", "Üsse dön"]
+		"ussaldiri":
+			pts = [["Düşman havaalanı", Vector2(-12000, -24500), red], ["Sen", Vector2(0, -2000), green]]
+			obj = ["Pistin en az iki bölümünü kes", "Park etmiş uçak ve hangarlardan beşini yok et", "Alarmda avcılar kalkar — önce pist"]
+		"uzak":
+			pts = [["Sığınak", BUNKER, red], ["SAM 40 km", BUNKER + Vector2(1800, 1500), red], ["Sen", Vector2(0, 15000), green]]
+			obj = ["Komuta sığınağını seyir füzesi / süzülen bombayla vur", "Haritada (M) sol tık: GPS hedefi", "SAM menziline (40 km) girme"]
+		"deniz":
+			var sp := _sea_points(2)
+			pts = [["Korvet 1", sp[0], red], ["Korvet 2", sp[1], red], ["Sen", Vector2(0, 2000), green]]
+			obj = ["İki korveti batır", "Gemi SAM'ı 12 km, radarı 30 km", "Gemi savar füze: 15 m'de, son evrede kendi radarı"]
+		"filo":
+			pts = [["Uçak gemisi", NavalGroup.FLEET_XZ, red], ["Rota", NavalGroup.FLEET_ROUTE[2], gold], ["Sen", Vector2(0, 2000), green]]
+			obj = ["Uçak gemisini batır (+15.000 ₺ prim)", "28 km içinde görülürsen avcı kaldırır", "Muhrip topu 6.5 km, SAM 16 km"]
+		"firkateyn":
+			pts = [["Fırkateynler", NavalGroup.HUNT_XZ, red], ["Rota", NavalGroup.HUNT_ROUTE[1], gold], ["Sen", Vector2(0, -2000), green]]
+			obj = ["İki fırkateyni batır", "Baş topu 6.5 km, SAM 16 km, radar 40 km", "Gemi savar füzeyi menzil dışından at"]
+		"devriye":
+			pts = [["Akıncılar", NavalGroup.RAID_XZ, red], ["Kıyı", NavalGroup.RAID_GOAL, gold], ["Sen", Vector2(0, 2000), green]]
+			obj = ["Üç akıncı korveti batır", "Kıyıya (3 km) ulaşmalarına izin verme"]
+		"sondarbe":
+			pts = [["Kara Doğan", Ace.FINALE_XZ, red], ["Düşman karargâhı", Vector2(-28000, -11000), gold], ["Sen", Vector2(0, -2000), green]]
+			obj = ["Kara Doğan'ı düşür (KD-01, siyah-kırmızı)", "Eskortlar isteğe bağlı", Ace.intel_text()]
 	return {"points": pts, "objectives": obj}
 
 

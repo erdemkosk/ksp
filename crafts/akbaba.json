@@ -1,0 +1,29 @@
+{
+	"name": "Akbaba Ağır Bombardıman",
+	"group": "Saldırı",
+	"description": "Dört turbofanlı ağır bombardıman: iki iç bomba bölmesi (16 × 250 kg — Space basılı: kapaklar açılır, bombalar seri düşer), arkada kendiliğinden ateş eden kuyruk tareti, çerçeveli kokpit, geniş ok kanat. Bombacı kamerası (Ğ) ile hedefin üstünden geç. Açık kapaklar seni radarda büyütür.",
+	"paint": {"scheme": "gece", "number": "B-52"},
+	"parts": [
+		{"part": "nose_cone",       "pos": [0, 0, -9.75]},
+		{"part": "cockpit_framed",  "pos": [0, 0, -7.5]},
+		{"part": "tank_long",       "pos": [0, 0, -4.0]},
+		{"part": "bomb_bay",        "pos": [0, 0, -0.2]},
+		{"part": "bomb_bay",        "pos": [0, 0, 3.4]},
+		{"part": "tank_long",       "pos": [0, 0, 7.2]},
+		{"part": "tail_turret",     "pos": [0, 0, 10.2]},
+
+		{"part": "wing_custom",     "pos": [6.15, 0.55, -0.28], "rot": [2, 0, 2], "mirror": true,
+			"wing": {"span": 11.0, "root": 5.0, "tip": 1.8, "sweep": 12.0, "thick": 0.12, "crank": 0.0, "crank_sweep": 0.0}},
+		{"part": "elevon",          "pos": [7.5, 0.6, 2.08], "mirror": true, "scale": 1.3},
+		{"part": "turbofan",        "pos": [2.6, -0.45, -2.6], "mirror": true},
+		{"part": "turbofan",        "pos": [4.9, -0.35, -2.1], "mirror": true},
+		{"part": "flare_pod",       "pos": [0, -0.78, 6.5]},
+
+		{"part": "stabilator",      "pos": [1.95, 0.2, 10.3], "mirror": true, "scale": 1.5},
+		{"part": "fin_vertical",    "pos": [0, 2.4, 9.6], "rot": [0, 0, 90], "scale": 1.5},
+		{"part": "rudder",          "pos": [0, 2.2, 11.1], "rot": [0, 0, 90], "scale": 1.5},
+
+		{"part": "gear_nose_heavy", "pos": [0, -0.6, -7.8]},
+		{"part": "gear_main_heavy", "pos": [1.4, -0.6, 1.3], "mirror": true}
+	]
+}

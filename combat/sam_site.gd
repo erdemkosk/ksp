@@ -184,15 +184,47 @@ func _physics_process(delta: float) -> void:
 			_fire(v)
 	else:
 		_target = null
+		# uçak yoksa: gelen seyir / gemi savar füzesini önle (küçük ve alçak: kısa menzilde görür)
+		var cm := _missile_threat()
+		if cm and _alive_tracker():
+			_m_lock += delta
+			if _m_lock > lock_time * 0.6 and _cool <= 0.0 and missiles > 0:
+				_m_lock = 0.0
+				_fire(cm)
+		else:
+			_m_lock = 0.0
 		_lock_t = maxf(_lock_t - delta * 2.0, 0.0)
 		_warned = false
 
 
-func _fire(v: Vessel) -> void:
+var _m_lock := 0.0
+
+
+func _alive_tracker() -> bool:
+	return not long_range or _alive(track_unit)
+
+
+## Menzildeki (alçak uçtuğu için menzilin %30'u), görüş hattındaki düşman seyir füzesi.
+func _missile_threat() -> Missile:
+	var ep := emitter_position()
+	var best: Missile = null
+	var bd := detect_range() * 0.3
+	for m in Missile.active:
+		if not is_instance_valid(m) or not m.guidance in ["cruise", "ship"] or m.team == team:
+			continue
+		var d := m.global_position.distance_to(ep)
+		if d < bd and m.radar_altitude() > 25.0 and Missile.terrain_clear(ep, m.global_position):
+			bd = d
+			best = m
+	return best
+
+
+func _fire(v: Node3D) -> void:
 	missiles -= 1
-	_cool = RELOAD
+	_cool = reload
 	var up := Planet.up_at(global_position)
-	var to := (v.com_global() - global_position).normalized()
+	var vp: Vector3 = v.com_global()
+	var to := (vp - global_position).normalized()
 	var m := Missile.new()
 	m.guidance = "radar"
 	m.launcher = self
@@ -205,7 +237,8 @@ func _fire(v: Vessel) -> void:
 	m.global_position = _launcher.global_position + up * 2.5
 	m.look_at(m.global_position + m.velocity, up)
 	Sfx.play_at("missile_launch.ogg", m.global_position, 6.0, 0.85, 8000.0)
-	v.system_message.emit("SAM ATIŞI! — alçal ya da füzeye dik dön, chaff at")
+	if v is Vessel:
+		v.system_message.emit("SAM ATIŞI! — alçal ya da füzeye dik dön, chaff at (Ş)")
 
 
 func _on_destroyed() -> void:

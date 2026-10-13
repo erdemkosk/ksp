@@ -15,6 +15,8 @@ const DIM := Color(0.6, 0.68, 0.74)
 
 var main: Node
 var radio_mode := false
+## Telsizde kanat adamı alt menüsü açık (WingmanMenu)
+var wing_mode := false
 var collapsed := false
 
 var _font := SystemFont.new()
@@ -78,7 +80,9 @@ func _process(delta: float) -> void:
 		radio_mode = false
 		return
 	UiTheme.fade_panel(self, delta)
-	_items = _radio_items() if radio_mode and not _on_foot() else _action_items()
+	if not radio_mode:
+		wing_mode = false
+	_items = (WingmanMenu.items(self) if wing_mode else _radio_items()) if radio_mode and not _on_foot() else _action_items()
 	var vp := get_viewport_rect().size
 	var h := 30.0 + (0.0 if collapsed else _items.size() * ROW_H + 6.0)
 	size = Vector2(W, h)
@@ -156,13 +160,18 @@ func _action_items() -> Array[Dictionary]:
 		out[-1]["id"] = "fueldump"
 	if v.cockpit():
 		var open := v.cockpit().canopy_open
-		out.append(_item("Kanopi", "AÇIK" if open else "KAPALI", AMBER if open else DIM,
+		out.append(_item("Kapı" if v.cockpit().layout == "civil" else "Kanopi", "AÇIK" if open else "KAPALI", AMBER if open else DIM,
 			func() -> void: v.cockpit().canopy_open = not v.cockpit().canopy_open))
 		out[-1]["id"] = "canopy"
 	for m in v.modules:
 		if m is TargetingPodModule:
 			out.append(_item("Hedefleme podu", "F8", ACC if main.pod_panel.open else DIM, main.pod_panel.toggle))
 			out[-1]["id"] = "pod"
+			break
+	for m in v.modules:
+		if m is BombModule or m is BombBayModule:
+			out.append(_item("Bombacı kamerası", "Ğ", ACC if main.bombsight.open else DIM, main.bombsight.toggle))
+			out[-1]["id"] = "bombsight"
 			break
 	if is_instance_valid(main.autoland):
 		out.append(_item("Otomatik inişi bırak", "PİLOT İNDİRİYOR", Color(0.4, 0.85, 1.0), main.cancel_autoland))
@@ -181,7 +190,7 @@ func _action_items() -> Array[Dictionary]:
 
 ## Her eylemin SABİT numarası: liste duruma göre değişse de (havada "Pilot indirsin" eklenir,
 ## yerde "Uçuşu bitir" çıkar) bir tuş hep aynı işi yapar. Takım hep 1, motor hep 2…
-const SLOTS := ["gear", "engine", "canopy", "flare", "airbrake", "chute", "jato", "pod", "autoland", "chaff"]
+const SLOTS := ["gear", "engine", "canopy", "flare", "airbrake", "chute", "jato", "pod", "autoland", "chaff", "bombsight"]
 
 
 ## Eylem kimliği → tuş numarası. Hangarın EYLEMLER sekmesi (craft["actions"]: [{id, on}])
@@ -247,6 +256,7 @@ func _radio_items() -> Array[Dictionary]:
 	out.append(_item("En yakın meydana yön", "", ACC, func() -> void: r.request("vector")))
 	out.append(_item("Hava durumu", "", ACC, func() -> void: r.request("weather")))
 	out.append(_item("ACİL DURUM (mayday)", "", RED, func() -> void: r.request("mayday")))
+	out.append_array(WingmanMenu.entry(self))
 	out.append(_item("Pilot indirsin", "OTOMATİK", Color(0.4, 0.85, 1.0), main.start_autoland))
 	out.append(_item("◀ Geri", "F2", DIM, func() -> void: radio_mode = false))
 	return out
@@ -274,7 +284,7 @@ func _run(i: int) -> void:
 		Sfx.click()
 	var was_radio := radio_mode
 	it["act"].call()
-	if was_radio and it["label"] != "◀ Geri":
+	if was_radio and it["label"] != "◀ Geri" and it["label"] != WingmanMenu.LABEL:
 		radio_mode = false
 
 
@@ -340,7 +350,7 @@ func _draw() -> void:
 	sb.set_border_width_all(1)
 	sb.set_corner_radius_all(10)
 	draw_style_box(sb, Rect2(Vector2.ZERO, size))
-	var title := "TELSİZ" if radio_mode else "EYLEMLER"
+	var title := ("TELSİZ · KANAT 2" if wing_mode else "TELSİZ") if radio_mode else "EYLEMLER"
 	draw_string(_bold, Vector2(12, 20), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, ACC)
 	var hint := ("1-%d · F2 kapat" % (_items.size() - 1)) if radio_mode else ("0-9 · F2 telsiz  " + ("▲" if collapsed else "▼"))
 	var hw := _font.get_string_size(hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x

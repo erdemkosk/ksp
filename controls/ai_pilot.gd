@@ -428,7 +428,8 @@ func _missile_shot(delta: float, dist: float, aspect: float) -> void:
 	var rear := clampf((1.0 - aspect) * 0.5, 0.0, 1.0)
 	var r_max: float = MissileModule.RADAR_RANGE * lerpf(0.8, 0.45, rear) if rf else MissileModule.SEEK_RANGE * lerpf(0.35, 0.75, rear)
 	r_max *= lerpf(1.2, 0.95, skill)
-	var r_min := MissileModule.RADAR_MIN_RANGE * 1.3 if rf else 600.0
+	# kafa kafaya yakın atış boşa gider (hedef arayıcı konisinden hemen çıkar)
+	var r_min: float = MissileModule.RADAR_MIN_RANGE * 1.3 if rf else lerpf(1300.0, 500.0, rear)
 	var in_flight := 0
 	for mi in Missile.active:
 		if mi.shooter == vessel and mi.victim == target:

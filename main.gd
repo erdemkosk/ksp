@@ -31,6 +31,7 @@ var aero_debug: AeroDebug
 var sky: SkyController
 var interaction: CockpitInteraction
 var pilot: PilotCharacter          ## EVA'daki pilot (yoksa null)
+var flight_stats: FlightStats       ## uçuş kaydı (uçuş sonu raporunda tasarım notları)
 var audio: AudioManager
 
 var _time := 0.0
@@ -41,6 +42,13 @@ const EVA_MAX_SPEED := 3.0
 
 
 func _ready() -> void:
+	if Game.args.has("missiongentest"):   # görev üreteci testi (MissionGen.run_test)
+		MissionGen.run_test()
+		set_physics_process(false)
+		get_tree().quit()
+		return
+	_setup_weather()
+	_prewarm_fx.call_deferred()
 	world = Node3D.new()
 	world.name = "World"
 	add_child(world)
@@ -107,6 +115,9 @@ func _ready() -> void:
 	pod_panel = TargetingPodPanel.new()
 	pod_panel.main = self
 	hud.add_child(pod_panel)
+	bombsight = BombsightPanel.new()
+	bombsight.main = self
+	hud.add_child(bombsight)
 	if Game.args.has("pod"):
 		(func() -> void:
 			pod_panel.toggle()
@@ -167,17 +178,28 @@ func _ready() -> void:
 		mission.main = self
 		add_child(mission)
 		mission.setup()
+		if Game.test_flight:
+			hud.show_message("TEST UÇUŞU (simülasyon): ödül yok, kayıp yok, cephe değişmez", 7.0)
 		if Game.args.has("aiplayer"):
 			player.enabled = false
 			var pai := AIPilot.new()
 			pai.vessel = vessel
 			pai.skill = float(Game.args.get("skill", "0.9"))
 			vessel.add_child(pai)
-	elif Game.args.has("air"):
+	elif Game.args.has("air") or Game.free_start == "air":
 		spawn_in_air()
 	else:
 		spawn_on_runway()
+		if Game.free_start == "hot":
+			vessel.set_hot()
+			vessel.parking_brake = false
 	terrain.generate_now()
+	if Game.args.has("fleettest") or Game.args.has("servicetest") or Game.args.has("prototest"):
+		var dt: Node = preload("res://tests/design_test.gd").new()
+		dt.main = self
+		add_child(dt)   # filo tipini WingFlight / AmbientAir kurulmadan seçer
+	WingFlight.setup(self)
+	Rehearsal.attach(self)   # görev provası: kartın rotası/saati/havası, düşmansız
 
 	if Game.args.has("autotest"):
 		player.enabled = false
@@ -204,6 +226,14 @@ func _ready() -> void:
 		var alt_ := preload("res://tests/autoland_test.gd").new()
 		alt_.main = self
 		add_child.call_deferred(alt_)
+	if Game.args.has("feeltest"):
+		var ft := preload("res://tests/feel_test.gd").new()
+		ft.main = self
+		add_child.call_deferred(ft)
+	if Game.args.has("fxtest"):
+		var fx := preload("res://tests/fx_shots.gd").new()
+		fx.main = self
+		add_child.call_deferred(fx)
 	if Game.args.has("enginetest"):
 		var et := preload("res://tests/engine_test.gd").new()
 		et.main = self
@@ -246,6 +276,34 @@ func _ready() -> void:
 			vessel.set_fuel_dump(true)
 			get_tree().create_timer(5.0).timeout.connect(func() -> void:
 				print("DUMPTEST 5 sn: %.0f -> %.0f kg (%.1f kg/s)" % [f0, vessel.fuel_amount(), (f0 - vessel.fuel_amount()) / 5.0])))
+	if Game.args.has("hitfreezetest"):
+		var hft := preload("res://tests/hit_freeze_test.gd").new()
+		hft.main = self
+		add_child.call_deferred(hft)
+	if Game.args.has("missilecamtest"):
+		var mct := preload("res://tests/missile_cam_test.gd").new()
+		mct.main = self
+		add_child.call_deferred(mct)
+	if Game.args.has("perfprobe"):
+		var pfp := preload("res://tests/perf_probe.gd").new()
+		pfp.main = self
+		add_child.call_deferred(pfp)
+	if Game.args.has("nodeprobe"):
+		var ndp := preload("res://tests/node_probe.gd").new()
+		ndp.main = self
+		add_child.call_deferred(ndp)
+	if Game.args.has("procprobe"):
+		var prp := preload("res://tests/proc_probe.gd").new()
+		prp.main = self
+		add_child.call_deferred(prp)
+	if Game.args.has("buildprobe"):
+		var bdp := preload("res://tests/build_probe.gd").new()
+		bdp.main = self
+		add_child.call_deferred(bdp)
+	if Game.args.has("groundwarptest"):
+		var gwt := preload("res://tests/ground_warp_test.gd").new()
+		gwt.main = self
+		add_child.call_deferred(gwt)
 	if Game.args.has("presetprobe"):
 		var pp := preload("res://tests/preset_probe.gd").new()
 		pp.main = self
@@ -299,6 +357,10 @@ func _ready() -> void:
 		var dt := preload("res://tests/dogfight_test.gd").new()
 		dt.main = self
 		add_child.call_deferred(dt)
+	if Game.args.has("wingmantest"):
+		var wmt := preload("res://tests/wingman_test.gd").new()
+		wmt.main = self
+		add_child.call_deferred(wmt)
 	if Game.args.has("wingtest"):
 		player.enabled = false
 		var wt2 := preload("res://tests/wing_test.gd").new()
@@ -309,6 +371,14 @@ func _ready() -> void:
 	# serbest uçuşta düşman yok (F7 ile çağrılabilir); eski testler --drone ile pasif hedef ister
 	if mdef.is_empty() and Game.resume.is_empty() and not Game.args.has("nolife") and not Crew._testing():
 		_spawn_civil_traffic()
+	# doğu denizinde kalıcı düşman filosu (serbest uçuş; testlerde yalnız --navalgroup ile)
+	if mdef.is_empty() and not Rehearsal.active() and (not Crew._testing() or Game.args.has("navalgroup")):
+		NavalGroup.spawn_patrol(world)
+	# cephe boyunca ortam hava trafiği: devriyeler, it dalaşları, taarruz paketleri (AmbientAir)
+	if not Rehearsal.active():
+		AmbientAir.attach(self, String(mdef.get("id", "")))
+	if Game.args.has("navaltest"):
+		add_child.call_deferred(preload("res://tests/naval_test.gd").new())
 	if mdef.is_empty() and (Game.args.has("drone") or Game.args.has("weapontest") or Game.args.has("dogfight") or Game.args.has("guntest") or Game.args.has("wingtest")):
 		spawn_enemy()
 
@@ -357,6 +427,66 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 ## Hangara dön (J). Dünya kaydırması ve gezegen merkezi sıfırlanır.
+## İlk isabette ~0.4 sn donma vardı: hasar dokuları üretimi ve yeni shader'ların (iz decal'ı, is
+## kaplaması, yırtık kenar, patlama parçacıkları) ilk çizimde derlenmesi. Uçuş başında, kameranın
+## önünde ~1 km uzakta (ekranda birkaç piksel) donmuş bir kukla uçakta hepsini bir kez tetikle.
+func _prewarm_fx() -> void:
+	await get_tree().create_timer(0.5).timeout
+	if not is_instance_valid(camera) or FloatingOrigin.world_root == null:
+		return
+	var craft := VesselBuilder.load_craft("res://crafts/sinek.json")
+	if craft.is_empty():
+		return
+	var dummy := VesselBuilder.build(craft)
+	dummy.name = "PrewarmDummy"
+	dummy.team = "oyuncu"
+	dummy.freeze = true
+	dummy.collision_layer = 0
+	dummy.collision_mask = 0
+	FloatingOrigin.world_root.add_child(dummy)
+	dummy.global_position = camera.global_position - camera.global_basis.z * 1100.0
+	await get_tree().process_frame
+	if not is_instance_valid(dummy) or dummy.parts.size() < 2:
+		return
+	var gp := dummy.parts[0].global_position
+	# füze isabetiyle aynı yol: iz, is, duman, ateş, sızıntı (kukla uzakta, kimse duymaz / görmez)
+	Damage.explosion(dummy.com_global() + Vector3(3, 0, 0), 25.0, 900.0, null)
+	for p in dummy.parts.slice(0, 3):
+		DamageFx.bullet_hole(p, p.global_position + Vector3.UP * 0.5, Vector3.UP)
+	DamageFx.tear(dummy.parts[0], dummy.parts[1])
+	Effects.explosion(FloatingOrigin.world_root, gp, Planet.up_at(gp), 0.4)
+	Damage._spark(gp, Vector3.UP)
+	var trails: Array[PuffTrail] = []
+	for kind in ["fire", "leak", "smoke", "dump", "flare", "missile"]:
+		trails.append(PuffTrail.create(dummy.parts[0], Vector3.ZERO, kind))
+	Effects.splash(FloatingOrigin.world_root, gp, Planet.up_at(gp), 0.2)
+	await get_tree().create_timer(0.6).timeout
+	if is_instance_valid(dummy):
+		dummy.queue_free()
+	for t in trails:
+		if is_instance_valid(t):
+			t.emitting = false
+
+## Serbest uçuş: menüde seçilen hava ve saat sabit. Kariyer: hava zamanla kendiliğinden değişir.
+func _setup_weather() -> void:
+	var test := false
+	for k: String in Game.args.keys():
+		if k.ends_with("test") or k.ends_with("probe") or k == "weather" or k == "screenshot":
+			test = true
+	if Game.mode == "free" and not test:
+		if Game.free_weather >= 0:
+			Weather.set_preset(Game.free_weather, true)
+		if Game.free_hour >= 0.0:
+			Weather.clock = Game.free_hour
+	Weather.set_dynamic(Game.mode == "career" and not test)
+	if not Weather.changed.is_connected(_on_weather_changed):
+		Weather.changed.connect(_on_weather_changed)
+
+
+func _on_weather_changed() -> void:
+	if Weather.dynamic and is_instance_valid(hud) and Weather.blend_rate < Weather.BLEND_RATE:
+		hud.show_message("Hava değişiyor: %s" % Weather.preset_name(), 5.0)
+
 func go_to_hangar() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	close_flight(false)
@@ -405,6 +535,10 @@ func _spawn(xform: Transform3D, velocity: Vector3) -> void:
 	var data: Dictionary = Game.flight_craft if not Game.flight_craft.is_empty() else VesselBuilder.load_craft(String(Game.args.get("craft", CRAFT_PATH)))
 	vessel = VesselBuilder.build(data)
 	spawned_craft = data
+	if not is_instance_valid(flight_stats):
+		flight_stats = FlightStats.new()
+		add_child(flight_stats)
+	flight_stats.vessel = vessel
 	for i in vessel.parts.size():
 		vessel.parts[i].set_meta("bi", i)
 	craft_cost = Career.craft_cost(data)
@@ -429,6 +563,8 @@ func _spawn(xform: Transform3D, velocity: Vector3) -> void:
 		if (k == Vessel.WEAPON_MISSILE or k == Vessel.WEAPON_RADAR) and radio:
 			radio.on_missile())
 	world.add_child(vessel)
+	Designs.begin_flight(data)
+	PartFailures.attach(vessel, self)   # prototip parça arızaları
 	player.autopilot.disengage()
 	_focus_vessel()
 	terrain.collision.rebuild_now(terrain.to_local(vessel.global_position))
@@ -609,6 +745,7 @@ var _pilot_safe := false
 var action_bar: ActionBar
 var time_warp: TimeWarp
 var pod_panel: TargetingPodPanel
+var bombsight: BombsightPanel
 var flight_map: FlightMap
 var _air_time := 0.0
 var _was_air := false
@@ -621,7 +758,14 @@ func close_flight(killed: bool) -> void:
 	if _flight_closed:
 		return
 	_flight_closed = true
+	var design_lines := Designs.note_flight(spawned_craft, self, killed)   # hizmet kaydı, prototip olgunlaşması
 	crew_lines = Crew.end_flight(killed)
+	crew_lines.append_array(design_lines)
+	if killed:
+		var comp := Career.pilot_lost()
+		if comp > 0:
+			crew_lines.append("Pilot tazminatı: -%d ₺" % comp)
+	crew_lines.append_array(WingFlight.on_close(self))
 	for line in crew_lines:
 		print("KADRO: ", line)
 		hud.show_message(line, 4.0)
@@ -637,12 +781,15 @@ func _track_crew(delta: float) -> void:
 	if not grounded:
 		_last_vs = vessel.vertical_speed()
 		if vessel.radar_altitude() > 30.0:
+			Crew.note_air(delta, vessel.ground_speed(), 0.0 if is_instance_valid(player) and player.blackout else vessel.g_force)
 			_air_time += delta
 			if _air_time > 15.0:
 				_was_air = true
 	elif _was_air:
 		_was_air = false
 		_air_time = 0.0
+		if _last_vs > -3.5:
+			Crew.note_landing(_last_vs)   # madalya sayacı (sert iniş sayılmaz)
 		if _last_vs > -1.5:
 			Crew.award(30, "ucus")
 			hud.show_message("Yumuşak iniş! %.1f m/s  +30 XP" % _last_vs, 3.0)
@@ -655,9 +802,10 @@ func _track_crew(delta: float) -> void:
 	if mission == null:
 		var alive := is_instance_valid(enemy) and not enemy.parts.is_empty() and enemy.cockpit() != null and enemy.has_pilot()
 		if _enemy_alive and not alive:
-			Crew.add_kill()
-			hud.show_message("Düşman düşürüldü!  +40 XP", 3.0)
-			radio.on_kill()
+			if WingFlight.take_kills(1) == 0:
+				Crew.add_kill()
+				hud.show_message("Düşman düşürüldü!  +40 XP", 3.0)
+				radio.on_kill()
 		_enemy_alive = alive
 
 
@@ -768,6 +916,7 @@ func _on_pilot_landed(impact: float) -> void:
 		_pilot_killed(impact, PackedStringArray(["%s paraşüt açılmadan yere çarptı." % pilot.pilot_name, "Fırlatma çok alçakta ya da ters uçarken yapıldı."]))
 		return
 	_pilot_safe = true
+	Crew.note("ejections")
 	Crew.award(20, "dayanim")
 	hud.show_message("%s güvenle yere indi. Kurtarma helikopteri geliyor  ·  1: uçuşu hemen bitir" % pilot.pilot_name, 6.0)
 	_send_rescue()
@@ -782,6 +931,7 @@ func _pilot_killed(impact: float, info: PackedStringArray) -> void:
 	camera.eva_distance = 9.0
 	camera.add_trauma(0.5)
 	close_flight(true)
+	info.append_array(crew_lines)
 	get_tree().create_timer(3.5).timeout.connect(func() -> void:
 		_show_report("PİLOT KAYIP", info, false))
 
@@ -817,31 +967,46 @@ func end_flight() -> void:
 		var near: Array = radio.nearest_airfield(vessel) if radio else [0, INF, 0]
 		if float(near[1]) < 2500.0:
 			Crew.award(10, "ucus")
+			if is_instance_valid(vessel) and vessel.parts.any(func(pt) -> bool: return pt.health_ratio() < 0.4):
+				Crew.note("damaged_returns")   # Yaralı Kahraman madalyası
 			info.append("Uçak %s'nda park halinde. Güvenli dönüş +10 XP" % String(TerrainGen.AIRFIELDS[near[0]]["name"]))
 		else:
 			info.append("Uçak meydan dışında, araziye indi.")
 	if money_lost > 1:
-		info.append("Uçak kaybı (sigorta payı): -%d ₺" % money_lost)
+		info.append("Uçak kaybı (uçağın bedeli): -%d ₺" % money_lost)
 	if mission and mission.money_gain > 0:
 		info.append("Görev ödülü: +%d ₺" % mission.money_gain)
+	if is_instance_valid(flight_stats):
+		info.append_array(flight_stats.report())   # tasarım notları: en çok zorlanan parça, stall, yakıt…
+	info.append_array(Career.front_lines)
+	if Game.test_flight:
+		info.append("TEST UÇUŞU: ödül, kayıp ve cephe değişimi yok.")
 	if not Career.sandbox():
 		info.append("Kasa: %d ₺" % Career.money)
+	# uçak eskir: her uçuşta biraz, hasar aldıysa daha çok (boya yıpranması, VesselBuilder)
+	if not _ejected and is_instance_valid(vessel) and not Game.flight_craft.is_empty() and not vessel.parts.is_empty():
+		var dmg := 0.0
+		for p in vessel.parts:
+			dmg += 1.0 - p.health_ratio()
+		dmg /= vessel.parts.size()
+		Game.flight_craft["wear"] = minf(float(Game.flight_craft.get("wear", 0.0)) + 0.04 + dmg * 0.3, 1.0)
 	close_flight(false)
 	info.append_array(crew_lines)
 	_show_report("UÇUŞ RAPORU", info, true)
 
 
 func _show_report(title: String, info: PackedStringArray, ok: bool) -> void:
+	DesignDebrief.fill_result(self, ok)   # görev kartı varsa: yakıt, G, süre… (tasarım değerlendirmesi)
 	FlightReport.open(self, title, info, ok)
 
 
-## Uçak kaybı: kariyerde sigorta payı (parça bedelinin yarısı) bir kez düşülür.
+## Uçak kaybı: kariyerde uçağın parça bedeli bir kez düşülür (test uçuşunda düşülmez).
 func _lose_aircraft() -> void:
 	if money_lost > 0 or craft_cost <= 0:
 		return
 	money_lost = maxi(Career.aircraft_lost(craft_cost), 1)
 	if money_lost > 1:
-		hud.show_message("Uçak kaybı: -%d ₺ (sigorta payı)" % money_lost, 4.0)
+		hud.show_message("Uçak kaybı: -%d ₺ (uçağın bedeli)" % money_lost, 4.0)
 
 
 # ------------------------------------------------------------------ uçuş kaydı

@@ -53,6 +53,23 @@ var _cards := {}                 # id -> kart (Button)
 var _cat_boxes := {}             # kategori -> [başlık, ızgara]
 var _com_marker: MeshInstance3D
 var _col_marker: MeshInstance3D
+# parça ağacı ve araçlar (KSP: 1 yerleştir · 2 kaydır · 3 döndür · 4 kök)
+var _part_copy := {}             # Part -> kaydın kaçıncı simetri kopyası
+var _held: Array = []            # elde taşınan grup (kök + alt ağaç kayıtları); boşsa tek parça
+var _held_root_xf := Transform3D.IDENTITY   # grubun kökünün tutulmadan önceki dönüşümü
+var _held_restore: Dictionary = {}          # tutmadan önceki tasarım (Esc ile geri koy)
+var _ghost_nodes := {}           # "üye:kopya" -> hayalet düğüm
+var _sym_mode := "mirror"        # "mirror" ya da "radial"
+var _radial := 4                 # radyal simetride kopya sayısı
+var _tool := 1
+var _gizmo: HangarGizmo
+var _giz_uid := -1               # tutamaçların bağlı olduğu kayıt
+var _giz_copy := 0
+var _drag_axis := -1
+var _drag_from := Vector2.ZERO
+var _drag_base: Dictionary = {}  # sürükleme başında tasarım
+var _drag_val := 0.0
+var _tool_btns: Array[Button] = []
 
 var _cam: Camera3D
 var _yaw := deg_to_rad(-35.0)
@@ -63,12 +80,14 @@ var _target := Vector3(0, 2.0, -2.0)
 var _theme: Theme
 var _name_edit: LineEdit
 var _stats: Label
-var _warn: Label
+var _warn: RichTextLabel
+var _dash: DesignDashboard          ## görsel tasarım panosu (hangar/design_dashboard.gd)
 var _sym_check: CheckButton
 var _load_popup: PopupPanel
 var _load_list: VBoxContainer
 var _status: Label
 var _time := 0.0
+var _mcheck: MissionCheck        ## görev kartı + canlı kontrol listesi (görev hazırlığında)
 
 
 func _ready() -> void:
@@ -89,6 +108,9 @@ func _ready() -> void:
 	_craft_root.position = Vector3(0, CRAFT_HEIGHT, 0)
 	add_child(_craft_root)
 	_build_markers()
+	_gizmo = HangarGizmo.new()
+	_gizmo.name = "Gizmo"
+	_craft_root.add_child(_gizmo)
 
 	_cam = Camera3D.new()
 	_cam.fov = 55.0
@@ -106,7 +128,16 @@ func _ready() -> void:
 	_hover_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	_hover_mat.albedo_color = Color(0.25, 0.6, 1.0, 0.35)
 
+	if Game.args.has("opprep"):   # test: "Göreve çık" ile gelinmiş gibi aç
+		Game.pending_op = {"mission": String(Game.args["opprep"]) if Game.args["opprep"] is String else "kara", "region": "sahil", "combat": true}
+		if Game.args.has("cardtest"):   # örnek görev kartı (görev üreticisi sözleşmesi)
+			Game.pending_op["card"] = MissionCheck.sample_card()
+	Game.rehearsal = false          # provadan dönüldü: hazırlık (pending_op) sürer
 	_build_ui()
+	var life := HangarLife.new()     # teknisyenler, alet arabası, merdiven; F12 fotoğraf
+	life.name = "HangarLife"
+	life.hangar = self
+	add_child(life)
 	if not Game.flight_craft.is_empty():
 		craft = Game.flight_craft.duplicate(true)
 	else:
@@ -117,24 +148,50 @@ func _ready() -> void:
 		_open_missions.call_deferred()
 	elif Game.hangar_action == "crew":
 		_open_crew.call_deferred()
+	elif Game.hangar_action == "new":
+		_new_craft.call_deferred()
 	Game.hangar_action = ""
-	if Game.args.has("hangartest"):
+	if Game.args.has("hangartreetest"):
+		_tree_test.call_deferred()
+	elif Game.args.has("hangartest"):
 		_self_test.call_deferred()
 	elif Game.args.has("briefing"):
 		(func() -> void: Briefing.open(self, String(Game.args["briefing"]), _name_edit.text, func() -> void: pass)).call_deferred()
+	elif Game.args.has("medaltest"):   # madalya/rütbe testi (bellekte), sonra kadro paneli
+		add_child.call_deferred(preload("res://tests/medal_test.gd").new())
 	elif Game.args.has("hangarcrew"):
 		_open_crew.call_deferred()
 	elif Game.args.has("hangarmissions"):
 		_open_missions.call_deferred()
+	elif Game.args.has("debriefdemo"):   # ekran görüntüsü: örnek görev kartıyla uçuş raporu + tasarım değerlendirmesi
+		(func() -> void:
+			await get_tree().create_timer(0.5).timeout
+			DesignDebrief.demo(self, _preview)).call_deferred()
 	elif Game.args.has("hangardemo"):
 		_demo.call_deferred()
+	elif Game.args.has("hangarload"):   # ekran görüntüsü: yükleme listesi (hizmet geçmişi)
+		_open_load.call_deferred()
+	elif Game.args.has("prodemo"):   # ekran görüntüsü: seri üretim penceresi
+		(func() -> void: ProductionDialog.open(self)).call_deferred()
+	elif Game.args.has("protopalette"):   # ekran görüntüsü: paletteki prototip rozetleri (aramayla)
+		(func() -> void:
+			_search.text = String(Game.args["protopalette"])
+			_filter_palette(_search.text)).call_deferred()
+	elif Game.args.has("tweakdemo"):   # ekran görüntüsü: verilen parçanın sağ tık penceresi
+		(func() -> void:
+			await get_tree().create_timer(0.6).timeout
+			for p in _preview.parts:
+				if p.part_id == String(Game.args["tweakdemo"]):
+					_fake_mouse = Vector2(900, 200)
+					_open_part_panel(p)
+					break).call_deferred()
 
 
 ## --hangardemo: ekran görüntüsü için elde parça + açık parça penceresi.
 func _demo() -> void:
 	await get_tree().create_timer(0.5).timeout
 	for p in _preview.parts:
-		if p.part_id == "wing_main":
+		if p.part_id == String(Game.args.get("demopart", "wing_main")):
 			var sp := _cam.unproject_position(_craft_root.global_transform * p.position)
 			_fake_mouse = sp
 			await get_tree().process_frame
@@ -147,6 +204,99 @@ func _demo() -> void:
 		_fake_mouse = _cam.unproject_position(wp) + Vector2(25, 10)
 	else:
 		_fake_mouse = Vector2(1000, 200)
+
+
+## --hangartreetest: parça ağacı, grup taşıma, radyal simetri, tutamaçla kaydırma ve kök değiştirme.
+func _tree_test() -> void:
+	await get_tree().process_frame
+	var parts: Array = craft["parts"]
+	var no_tree := 0
+	for e: Dictionary in parts:
+		if not e.has("uid") or not e.has("parent"):
+			no_tree += 1
+	var root_name := ""
+	for e: Dictionary in parts:
+		if int(e.get("parent", 0)) < 0:
+			root_name += String(e["part"]) + " "
+	print("TREE kayıt=%d ağaçsız=%d kök=%s" % [parts.size(), no_tree, root_name])
+	# en çok alt ağacı olan gövde parçasını tut, 1 m geri koy
+	var best := -1
+	var best_n := 0
+	for i in parts.size():
+		var n := CraftTree.subtree(craft, i).size()
+		if i > 0 and n > best_n and n < parts.size():
+			best_n = n
+			best = i
+	var e0: Dictionary = parts[best]
+	var best_uid := int(e0["uid"])
+	var p0 := VesselBuilder._vec(e0["pos"])
+	var kids_before := {}
+	for i in CraftTree.subtree(craft, best):
+		kids_before[int(parts[i]["uid"])] = [VesselBuilder._vec(parts[i]["pos"]), parts[i].get("mirror", false)]
+	var n_parts := _preview.parts.size()
+	_grab(best, false)
+	print("TREE tutulan=%s grup=%d" % [e0["part"], _held.size()])
+	_placement = {"pos": p0 + Vector3(0, 0, 1.0), "rot": VesselBuilder._vec(e0.get("rot", [0, 0, 0])), "ok": true, "parent": null}
+	_try_place(false)
+	var ok := true
+	for uid in kids_before:
+		var i := CraftTree.index_of(craft, uid)
+		var e: Dictionary = craft["parts"][i]
+		var d := VesselBuilder._vec(e["pos"]) - (kids_before[uid][0] as Vector3)
+		if not d.is_equal_approx(Vector3(0, 0, 1.0)) or e.get("mirror", false) != kids_before[uid][1]:
+			ok = false
+			print("TREE  hata: %s kayma=%s ayna=%s" % [e["part"], d, e.get("mirror", false)])
+	print("TREE grup 1 m geri taşındı, ayna korundu: %s  parça sayısı %d → %d" % [ok, n_parts, _preview.parts.size()])
+	# radyal ×4: gövdenin yanına küçük kanat
+	symmetry = true
+	_sym_mode = "radial"
+	_radial = 4
+	var body: Part = null
+	for p in _preview.parts:
+		if p.def.get("category", "") == "gövde" and absf(p.position.x) < 0.1:
+			body = p
+	_select("wing_small")
+	_placement = {"pos": body.position + Vector3(1.6, 0, 0), "rot": Vector3.ZERO, "ok": true, "parent": body}
+	var before := _preview.parts.size()
+	_try_place(false)
+	var last: Dictionary = craft["parts"][-1]
+	print("TREE radyal: kayıt radial=%s axis=%s  parça %d → %d (4 bekleniyor)" % [last.get("radial"), last.get("axis"), before, _preview.parts.size()])
+	# tutamaç: aynalı bir kaydın SOL (ayna) kopyasını +X'e (merkeze doğru) 0.5 m kaydır → sağ taraf -X'e
+	var mi := -1
+	for i in (craft["parts"] as Array).size():
+		if craft["parts"][i].get("mirror", false):
+			mi = i
+			break
+	var mpos := VesselBuilder._vec(craft["parts"][mi]["pos"])
+	_tool = 2
+	_giz_uid = int(craft["parts"][mi]["uid"])
+	_giz_copy = 1
+	_place_gizmo()
+	_drag_base = craft.duplicate(true)
+	_drag_axis = 0
+	var s0 := _cam.unproject_position(_gizmo.global_position)
+	var s1 := _cam.unproject_position(_gizmo.global_position + Vector3.RIGHT * _gizmo.size_k)
+	_drag_from = s0
+	_drag_update(s0 + (s1 - s0) * (0.5 / _gizmo.size_k), false)
+	_end_drag()
+	var mi2 := CraftTree.index_of(craft, _giz_uid)
+	print("TREE tutamaç: ayna kopyası +X 0.5 → asıl kayıt x %.2f → %.2f (−0.5 bekleniyor)" % [mpos.x, VesselBuilder._vec(craft["parts"][mi2]["pos"]).x])
+	# kök değiştir: kuyruktaki son gövde parçası kök olunca tutulan grup ön tarafı da kapsar
+	best = CraftTree.index_of(craft, best_uid)
+	_make_root(best)
+	print("TREE kök değişti: %s kökün alt ağacı = %d / %d" % [craft["parts"][best]["part"], CraftTree.subtree(craft, best).size(), (craft["parts"] as Array).size()])
+	if Game.args.has("shotdir"):
+		# tutamaçların görüntüsü (sağ ana kanat üstünde)
+		_focus_camera()
+		_giz_copy = 0
+		for t in [2, 3]:
+			_tool = t
+			_place_gizmo()
+			for i in 20:
+				await get_tree().process_frame
+			await RenderingServer.frame_post_draw
+			get_viewport().get_texture().get_image().save_png(String(Game.args["shotdir"]) + "/gizmo_%d.png" % t)
+	get_tree().quit()
 
 
 ## --hangartest: sıfırdan, fare yerleştirmesini taklit ederek uçak kurar.
@@ -183,7 +333,7 @@ func _self_test() -> void:
 		print("TEST %s → %s" % [s[0], _placement])
 		_try_place(false)
 		await get_tree().process_frame
-	print("TEST parça sayısı: %d  uyarı: %s" % [_preview.parts.size(), _warn.text.replace("\n", " | ")])
+	print("TEST parça sayısı: %d  uyarı: %s" % [_preview.parts.size(), _warn.get_parsed_text().replace("\n", " | ")])
 	if Game.args.has("autotest"):
 		Game.args.erase("screenshot")
 		_launch()
@@ -431,12 +581,17 @@ func _cone(p: Vector3) -> void:
 
 
 const HELP_KEYS := [
+	["ARAÇLAR", ""],
+	["1 · 2 · 3 · 4", "yerleştir · kaydır (oklar) · döndür (halkalar) · kök seç"],
+	["Kaydır / döndür", "parçaya tıkla, tutamacı sürükle (Shift: serbest) — takılı olanlar da gelir"],
 	["YERLEŞTİRME", ""],
-	["Sol tık", "parçayı yerleştir · takılı parçayı tutup taşı"],
-	["Shift + sol tık", "yerleştir, seçim elde kalsın"],
-	["Sağ tık", "parça penceresi (bilgi, boyut, kopyala, sil)"],
-	["Del", "fare altındaki parçayı sil"],
-	["X", "simetri aç / kapat"],
+	["Sol tık", "parçayı yerleştir · takılı parçayı ona takılı her şeyle tut"],
+	["Ctrl + sol tık", "parçayı takılı olanlarla kopyala"],
+	["Shift + sol tık", "yerleştir, seçim (grup) elde kalsın"],
+	["Esc · sağ tık", "elden bırak (taşınan grup yerine döner)"],
+	["Sağ tık", "parça penceresi (bilgi, boyut, ayarlar, taşı, kopyala, kök yap, sil)"],
+	["Del", "fare altındaki parçayı takılı olanlarla sil"],
+	["X · V", "simetri aç / kapat · tür: ayna → radyal ×2 ×3 ×4 ×6 ×8"],
 	["Yön tuşları · PgUp/PgDn", "fare altındaki parçayı ince kaydır (Shift: 25 cm)"],
 	["DÖNDÜRME VE BOYUT", ""],
 	["W/S · A/D · Q/E", "burun · sapma · yatış ekseninde döndür"],
@@ -447,6 +602,8 @@ const HELP_KEYS := [
 	["Tekerlek · F", "yakınlaş · uçağı ortala"],
 	["Ctrl+Z · Ctrl+Y", "geri al · yinele"],
 	["Ctrl+S", "kaydet"],
+	["F12", "fotoğraf (arayüz gizlenir, user://photos)"],
+	["Rüzgâr tüneli (üst çubuk)", "akış, stall, yük haritası, kaldırma eğrisi"],
 ]
 
 
@@ -530,6 +687,7 @@ func _rebuild() -> void:
 		_preview.queue_free()
 	_preview = null
 	_part_entry.clear()
+	_part_copy.clear()
 	var parts: Array = craft.get("parts", [])
 	if not parts.is_empty():
 		_preview = VesselBuilder.build(craft)
@@ -537,18 +695,22 @@ func _rebuild() -> void:
 		_craft_root.add_child(_preview)
 		_preview.set_physics_process(false)
 		_preview.set_cold()
-		# parça → kayıt eşlemesi (ayna kopya kaydın hemen ardından gelir)
+		# parça → kayıt eşlemesi (simetri kopyaları — ayna ya da radyal — kaydın hemen ardından gelir)
 		var k := 0
 		for i in parts.size():
 			var entry: Dictionary = parts[i]
-			var copies := 2 if entry.get("mirror", false) else 1
+			var copies := VesselBuilder.entry_copies(entry).size()
 			for c in copies:
 				if k < _preview.parts.size():
 					_part_entry[_preview.parts[k]] = i
+					_part_copy[_preview.parts[k]] = c
 				k += 1
-		_rest_on_floor()
+		CraftTree.ensure(craft, _preview, _part_entry)   # eski tasarım: ağacı temastan çıkar
+		if _drag_axis < 0:
+			_rest_on_floor()     # sürüklerken uçak yerinden oynamasın
 	_refresh_nodes()
 	_update_stats()
+	_place_gizmo()
 
 
 # ------------------------------------------------------------------ parça penceresi (sağ tık)
@@ -603,18 +765,22 @@ func _open_part_panel(part: Part) -> void:
 		_wing_editor(w.body, idx, entry)
 	if def.get("category", "") in VesselBuilder.STRETCHABLE:
 		_stretch_editor(w.body, idx, entry)
+	_tweak_editor(w.body, idx, entry, part)
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 6)
-	for spec in [["Taşı", func() -> void: _pick_up_entry(idx)],
-			["Kopyala", func() -> void:
-				_close_part_panel()
-				_select(entry["part"], sc)],
+	var n_sub := CraftTree.subtree(craft, idx).size()
+	if n_sub > 1:
+		var sub := Label.new()
+		sub.text = "Bu parçaya %d parça takılı: taşı / kopyala / sil hepsini birlikte yapar" % (n_sub - 1)
+		sub.add_theme_font_size_override("font_size", 11)
+		sub.add_theme_color_override("font_color", Color(0.65, 0.72, 0.8))
+		w.body.add_child(sub)
+	for spec in [["Taşı", func() -> void: _grab(idx, false)],
+			["Kopyala", func() -> void: _grab(idx, true)],
+			["Kök yap", func() -> void: _make_root(idx)],
 			["Sil", func() -> void:
 				_close_part_panel()
-				_push_undo()
-				(craft["parts"] as Array).remove_at(idx)
-				Sfx.play_ui("switch_3.ogg", -6.0, 0.8)
-				_rebuild()]]:
+				_delete_entry(idx)]]:
 		var b := Button.new()
 		b.text = spec[0]
 		b.focus_mode = Control.FOCUS_NONE
@@ -629,6 +795,51 @@ func _open_part_panel(part: Part) -> void:
 	_part_panel = w
 	Sfx.click()
 
+
+## Parçaya özel ayarlar (KSP tweakable gibi): yakıt doluluğu, motor itki sınırı ve art yakıcı,
+## kontrol yüzeyi sapma açısı. Kayda (craft parts girdisi) yazılır, uçuşta VesselBuilder uygular.
+func _tweak_editor(parent: Control, idx: int, entry: Dictionary, part: Part) -> void:
+	for m in part.modules:
+		if m is FuelTankModule and m.capacity > 0.0:
+			_section_label(parent, "YAKIT")
+			var cap: float = m.capacity
+			_slider(parent, "Doluluk", 0.0, 100.0, 5.0, float(entry.get("fuel", 1.0)) * 100.0, "%%%d", func(x: float) -> void:
+				_commit_entry(idx, func(e: Dictionary) -> void:
+					if x >= 99.5:
+						e.erase("fuel")
+					else:
+						e["fuel"] = x / 100.0))
+			var l := Label.new()
+			l.text = "%d / %d kg — az yakıt: hafif ve çevik, ama kısa menzil" % [cap * float(entry.get("fuel", 1.0)), cap]
+			l.add_theme_font_size_override("font_size", 11)
+			l.add_theme_color_override("font_color", Color(0.65, 0.72, 0.8))
+			parent.add_child(l)
+		elif m is EngineModule:
+			_section_label(parent, "MOTOR")
+			_slider(parent, "İtki sınırı", 10.0, 100.0, 5.0, float(entry.get("thrust_limit", 1.0)) * 100.0, "%%%d", func(x: float) -> void:
+				_commit_entry(idx, func(e: Dictionary) -> void:
+					if x >= 99.5:
+						e.erase("thrust_limit")
+					else:
+						e["thrust_limit"] = x / 100.0))
+			if not (m.prop or m.rocket or bool(part.def.get("modules", [{}])[0].get("no_ab", false))):
+				var ab := CheckBox.new()
+				ab.text = "Art yakıcı (AB) kullanılsın"
+				ab.focus_mode = Control.FOCUS_NONE
+				ab.button_pressed = not entry.get("no_ab", false)
+				ab.toggled.connect(func(on: bool) -> void:
+					_commit_entry(idx, func(e: Dictionary) -> void:
+						if on:
+							e.erase("no_ab")
+						else:
+							e["no_ab"] = true))
+				parent.add_child(ab)
+		elif m is ControlSurfaceModule:
+			_section_label(parent, "KONTROL YÜZEYİ")
+			var base_deg := rad_to_deg(m.max_deflection)
+			_slider(parent, "Sapma", 5.0, 35.0, 1.0, float(entry.get("deflect", base_deg)), "±%d°", func(x: float) -> void:
+				_commit_entry(idx, func(e: Dictionary) -> void:
+					e["deflect"] = x))
 
 # ------------------------------------------------------------------ biçim düzenleyicileri
 
@@ -829,15 +1040,333 @@ func _rescale_entry(idx: int, dir: int) -> void:
 
 
 func _pick_up_entry(idx: int) -> void:
+	_grab(idx, false)
+
+
+## Parçayı ve ona takılı her şeyi (alt ağaç) ele al (KSP gibi). copy: tasarımda bırak, kopyasını
+## al. Tutulan grup Esc / sağ tıkla yerine döner; yerleştirince yeni yerine taşınır.
+func _grab(idx: int, copy: bool) -> void:
 	_close_part_panel()
-	_push_undo()
-	var entry: Dictionary = (craft["parts"] as Array)[idx]
-	(craft["parts"] as Array).remove_at(idx)
-	symmetry = entry.get("mirror", false) or symmetry
-	_sym_check.set_pressed_no_signal(symmetry)
+	var parts: Array = craft["parts"]
+	if idx < 0 or idx >= parts.size():
+		return
+	var ids := CraftTree.subtree(craft, idx)
+	var restore := craft.duplicate(true)
+	var group: Array = []
+	if copy:
+		for i in ids:
+			group.append((parts[i] as Dictionary).duplicate(true))
+		CraftTree.renumber(craft, group)
+	else:
+		_push_undo()
+		group = CraftTree.take(craft, ids)
+	var root: Dictionary = group[0]
+	var sym := CraftTree.sym_of(root)
+	if sym.has("mirror"):
+		symmetry = true
+		_sym_mode = "mirror"
+	elif sym.has("radial"):
+		symmetry = true
+		_sym_mode = "radial"
+		_radial = int(sym["radial"])
+	_sync_sym_ui()
 	Sfx.play_ui("switch_2.ogg", -6.0, 1.2)
+	_giz_uid = -1
+	if not copy:
+		_rebuild()
+	_select(root["part"], float(root.get("scale", 1.0)))
+	_held = group
+	_held_root_xf = VesselBuilder.entry_xform(root)
+	_held_restore = {} if copy else restore
+	_clear_ghosts()
+	_ghost = _ghost_for(0, 0, false)
+	if group.size() > 1:
+		_flash("%d parça birlikte %s (takılı olanlarla)" % [group.size(), "kopyalandı" if copy else "taşınıyor"])
+
+
+## Tutulan grubu bırak: taşınıyorsa yerine geri koy.
+func _cancel_hold() -> void:
+	if not _held_restore.is_empty():
+		craft = _held_restore
+		_held_restore = {}
+		if not _undo.is_empty():
+			_undo.pop_back()
+		_rebuild()
+	_select("")
+
+
+## Parçayı ve ona takılı her şeyi sil.
+func _delete_entry(idx: int) -> void:
+	if idx < 0 or idx >= (craft["parts"] as Array).size():
+		return
+	var ids := CraftTree.subtree(craft, idx)
+	_push_undo()
+	CraftTree.take(craft, ids)
+	_hover_part = null
+	_giz_uid = -1
+	Sfx.play_ui("switch_3.ogg", -6.0, 0.8)
+	if ids.size() > 1:
+		_flash("%d parça silindi (takılı olanlarla)" % ids.size())
 	_rebuild()
-	_select(entry["part"], entry.get("scale", 1.0))
+
+
+const TOOL_NAMES := ["", "Yerleştir", "Kaydır", "Döndür", "Kök"]
+const TOOL_HINTS := ["",
+	"Sol tık: tut / yerleştir (takılı olanlarla) · Ctrl+sol: kopyala · Sağ tık: pencere",
+	"Parçaya tıkla → okları sürükle: eksende kaydır (adım 5 cm, Shift serbest) · takılı olanlar da gelir",
+	"Parçaya tıkla → halkaları sürükle: eksen çevresinde döndür (açı adımı C, Shift 1°)",
+	"Parçaya tıkla: uçağın kökü olur (tutunca ona takılı her şey gelir)"]
+
+
+var _blink_mat: StandardMaterial3D
+
+
+## Uyarıya tıklanınca ilgili parçalar kırmızı yanıp söner (3 kez).
+func _blink(kind: String) -> void:
+	if not is_instance_valid(_preview):
+		return
+	if _blink_mat == null:
+		_blink_mat = StandardMaterial3D.new()
+		_blink_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_blink_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_blink_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		_blink_mat.no_depth_test = true
+		_blink_mat.albedo_color = Color(1.0, 0.25, 0.15, 0.6)
+	var hits := _parts_of(kind)
+	if hits.is_empty():
+		_flash("Uçakta bu türden parça yok — paletten ekle")
+		return
+	Sfx.play_ui("switch_2.ogg", -10.0, 1.5)
+	for i in 6:
+		for p in hits:
+			if is_instance_valid(p):
+				_set_overlay(p, _blink_mat if i % 2 == 0 else null)
+		await get_tree().create_timer(0.2).timeout
+
+
+## Uyarı türüne (_update_stats `kind`) uyan parçalar.
+func _parts_of(kind: String) -> Array[Part]:
+	var hits: Array[Part] = []
+	if not is_instance_valid(_preview):
+		return hits
+	for p in _preview.parts:
+		var match_it := false
+		for m in p.modules:
+			match kind:
+				"engine": match_it = match_it or m is EngineModule
+				"intake": match_it = match_it or m is IntakeModule or m is EngineModule
+				"fuel": match_it = match_it or m is FuelTankModule
+				"wing": match_it = match_it or (m is WingModule and not m is ControlSurfaceModule)
+				"control": match_it = match_it or m is ControlSurfaceModule
+				"gear": match_it = match_it or m is LandingGearModule
+				"cockpit": match_it = match_it or m is CockpitModule
+				"radar": match_it = match_it or m is RadarModule or m is MissileModule
+				"pod": match_it = match_it or m is TargetingPodModule or m is BombModule
+		if match_it:
+			hits.append(p)
+	return hits
+
+
+var _markers: Array[Label3D] = []
+
+
+## Sorunlu parçaların üstünde yüzen ⚠ işaretleri (yazı okumadan görülsün). Parça yoksa (ör. kokpit
+## eksik) işaret uçağın ağırlık merkezinin üstünde durur.
+func _warn_markers(kinds: PackedStringArray) -> void:
+	for m in _markers:
+		if is_instance_valid(m):
+			m.queue_free()
+	_markers.clear()
+	if not is_instance_valid(_preview):
+		return
+	# her uyarı türüne TEK işaret: ilgili parçaların ortasının üstünde (altı tane ⚠ gürültü olur)
+	var spots: Array[Vector3] = []
+	for kind in kinds:
+		var hits := _parts_of(kind)
+		var s := _preview.com_local + Vector3.UP * 2.5
+		if not hits.is_empty():
+			var sum := Vector3.ZERO
+			var top := -INF
+			for p in hits:
+				sum += p.position
+				top = maxf(top, p.position.y + p.size.y * 0.5)
+			s = sum / hits.size()
+			s.y = top + 1.0
+		for o in spots:
+			if o.distance_to(s) < 1.2:
+				s.y = o.y + 1.3     # üst üste binmesin
+		spots.append(s)
+	for s in spots:
+		var l := Label3D.new()
+		l.text = "⚠"
+		l.font_size = 96
+		l.pixel_size = 0.008
+		l.modulate = Color(1.0, 0.55, 0.2)
+		l.outline_size = 18
+		l.outline_modulate = Color(0.1, 0.02, 0.0, 0.9)
+		l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		l.no_depth_test = true
+		l.position = s
+		_preview.add_child(l)
+		_markers.append(l)
+		var tw := l.create_tween().set_loops()
+		tw.tween_property(l, "position:y", s.y + 0.3, 0.6).set_trans(Tween.TRANS_SINE)
+		tw.tween_property(l, "position:y", s.y, 0.6).set_trans(Tween.TRANS_SINE)
+
+
+var _tunnel: WindTunnel
+
+
+## Rüzgâr tüneli aç / kapa (hangar/wind_tunnel.gd): akış, stall, yük haritası, CL eğrisi.
+func _toggle_tunnel() -> void:
+	if _tunnel == null:
+		_tunnel = WindTunnel.new()
+		_tunnel.name = "WindTunnel"
+		_tunnel.hangar = self
+		_tunnel.ui_root = _hover_label.get_parent() as Control
+		add_child(_tunnel)
+	if _tunnel.is_open():
+		_tunnel.close()
+	else:
+		_cancel_hold()
+		_close_part_panel()
+		_tunnel.open()
+	Sfx.click()
+
+
+## Alt ortada araç çubuğu (KSP'deki gibi): 1 yerleştir · 2 kaydır · 3 döndür · 4 kök.
+func _build_toolbar(root: Control) -> void:
+	var panel := PanelContainer.new()
+	panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	panel.offset_bottom = -40
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	panel.add_child(row)
+	for t in range(1, 5):
+		var b := Button.new()
+		b.text = "%d  %s" % [t, TOOL_NAMES[t]]
+		b.toggle_mode = true
+		b.button_pressed = t == _tool
+		b.focus_mode = Control.FOCUS_NONE
+		b.tooltip_text = TOOL_HINTS[t]
+		b.add_theme_font_size_override("font_size", 13)
+		var tt := t
+		b.pressed.connect(func() -> void:
+			b.set_pressed_no_signal(true)
+			_set_tool(tt))
+		row.add_child(b)
+		_tool_btns.append(b)
+	root.add_child(panel)
+
+
+## Araç: 1 yerleştir · 2 kaydır · 3 döndür · 4 kök.
+func _set_tool(t: int) -> void:
+	if t == _tool:
+		return
+	if not _selected.is_empty():
+		_cancel_hold()
+	_tool = t
+	_drag_axis = -1
+	for i in _tool_btns.size():
+		_tool_btns[i].set_pressed_no_signal(i + 1 == t)
+	Sfx.play_ui("switch_2.ogg", -12.0, 1.0 + t * 0.08)
+	_flash("%s — %s" % [TOOL_NAMES[t], TOOL_HINTS[t]])
+	_place_gizmo()
+
+
+## Kaydır / döndür aracında tıklama: tutamaca basıldıysa sürükleme başlar, parçaya basıldıysa
+## tutamaçlar o parçaya (tıklanan simetri kopyasına) taşınır, boşluğa basıldıysa kalkar.
+func _tool_click(mouse: Vector2) -> void:
+	if _gizmo.visible:
+		var axis := _gizmo.pick(_cam, mouse)
+		if axis >= 0:
+			_drag_axis = axis
+			_drag_from = mouse
+			_drag_val = 0.0
+			_drag_base = craft.duplicate(true)
+			_push_undo()
+			return
+	var part := _part_under_mouse()
+	if part != null and _part_entry.has(part):
+		_giz_uid = int(craft["parts"][_part_entry[part]].get("uid", -1))
+		_giz_copy = int(_part_copy.get(part, 0))
+		Sfx.play_ui("switch_2.ogg", -14.0, 1.3)
+	else:
+		_giz_uid = -1
+	_place_gizmo()
+
+
+## Tutamaçları hedef parçanın üstüne koy (araç 2 / 3 ve hedef varsa).
+func _place_gizmo() -> void:
+	if _gizmo == null:
+		return
+	var idx := CraftTree.index_of(craft, _giz_uid) if _giz_uid >= 0 else -1
+	var target: Part = null
+	if idx >= 0 and (_tool == 2 or _tool == 3):
+		for p in _part_entry:
+			if _part_entry[p] == idx and int(_part_copy.get(p, 0)) == _giz_copy:
+				target = p
+	if target == null:
+		_gizmo.set_mode(HangarGizmo.Mode.NONE)
+		return
+	_gizmo.position = target.position
+	_gizmo.set_mode(HangarGizmo.Mode.MOVE if _tool == 2 else HangarGizmo.Mode.ROTATE)
+
+
+## Sürükleme: başlangıç tasarımından, toplam kaydırma / dönüş kadar değiştirilmiş tasarım kurulur
+## (adım değişince). Tıklanan kopyadaki hareket asıl kayda çevrilir (aynada X ters, radyalde döner).
+func _drag_update(mouse: Vector2, free: bool) -> void:
+	var val: float
+	if _tool == 2:
+		val = snappedf(_gizmo.drag_move(_cam, _drag_axis, _drag_from, mouse), 0.001 if free else SNAP)
+	else:
+		var step := deg_to_rad(1.0 if free else _angle_step)
+		val = snappedf(_gizmo.drag_angle(_cam, _drag_axis, _drag_from, mouse), step)
+	if is_equal_approx(val, _drag_val):
+		return
+	_drag_val = val
+	craft = _drag_base.duplicate(true)
+	var idx := CraftTree.index_of(craft, _giz_uid)
+	if idx < 0:
+		return
+	var axis: Vector3 = HangarGizmo.AXES[_drag_axis]
+	var pivot := _gizmo.position
+	var d_copy: Transform3D
+	if _tool == 2:
+		d_copy = Transform3D(Basis.IDENTITY, axis * val)
+	else:
+		d_copy = Transform3D(Basis.IDENTITY, pivot) * Transform3D(Basis(axis, val), Vector3.ZERO) * Transform3D(Basis.IDENTITY, -pivot)
+	var ops := VesselBuilder.copy_ops(craft["parts"][idx])
+	var op: Dictionary = ops[_giz_copy] if _giz_copy < ops.size() else ops[0]
+	var s: Transform3D = op["xf"]
+	var d := s * d_copy * s if op["mirror"] else s.affine_inverse() * d_copy * s
+	var ids := CraftTree.subtree(craft, idx)
+	var group := CraftTree.take(craft, ids)
+	var moved := CraftTree.transform_group(craft, group, d, CraftTree.sym_of(group[0]))
+	(craft["parts"] as Array).append_array(moved)
+	_rebuild()
+	_flash(("%+.2f m" % val) if _tool == 2 else ("%+d°" % roundi(rad_to_deg(val))))
+
+
+func _end_drag() -> void:
+	_drag_axis = -1
+	_drag_base = {}
+	if is_equal_approx(_drag_val, 0.0) and not _undo.is_empty():
+		_undo.pop_back()     # hiç oynamadı: geri alma noktası gereksiz
+	_rebuild()               # zemine yeniden otur
+
+
+## Kök değiştir (KSP 4. araç): uçağın ağacı bu parçadan başlar.
+func _make_root(idx: int) -> void:
+	_close_part_panel()
+	if idx < 0 or idx >= (craft["parts"] as Array).size():
+		return
+	_push_undo()
+	CraftTree.reroot(craft, idx)
+	Sfx.play_ui("switch_2.ogg", -8.0, 0.9)
+	_flash("Kök: %s — tutunca artık bu parçaya takılanlar gelir" % PartLibrary.get_def(String(craft["parts"][idx]["part"])).get("title", ""))
 
 
 ## Uçağı tekerlekleri (yoksa gövdesi) zemine değecek şekilde indir.
@@ -866,6 +1395,10 @@ func _process(delta: float) -> void:
 		_update_camera()
 	_update_ghost()
 	_update_hover()
+	if _gizmo and _gizmo.visible:
+		if _drag_axis < 0:
+			_gizmo.hover = _gizmo.pick(_cam, _mouse())
+		_gizmo.fit(_cam)
 	if Game.args.has("screenshot") and _time >= float(Game.args.get("shot-time", "3")):
 		_take_screenshot(Game.args["screenshot"])
 
@@ -882,7 +1415,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if _rmb_click:
 			_rmb_click = false
 			if not _selected.is_empty():
-				_select("")
+				_cancel_hold()
 			else:
 				var part := _part_under_mouse()
 				if part != null:
@@ -890,9 +1423,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				else:
 					_close_part_panel()
 		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _drag_axis >= 0:
+		_end_drag()
+		return
 	if event is InputEventMouseMotion:
 		var rel: Vector2 = event.relative
-		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+		if _drag_axis >= 0:
+			_drag_update(event.position, event.shift_pressed)
+		elif Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 			if event.position.distance_to(_rmb_pos) > 5.0:
 				_rmb_click = false
 			if not _rmb_click:
@@ -915,10 +1453,18 @@ func _unhandled_input(event: InputEvent) -> void:
 				else:
 					_dist = minf(_dist * 1.1, 90.0)
 			MOUSE_BUTTON_LEFT:
-				if _selected.is_empty():
-					_try_pick_up()
-				else:
+				if _tunnel != null and _tunnel.is_open():
+					return      # rüzgâr tünelinde tasarım değişmez (kamera serbest)
+				if not _selected.is_empty():
 					_try_place(event.shift_pressed)
+				elif _tool == 2 or _tool == 3:
+					_tool_click(event.position)
+				elif _tool == 4:
+					var part := _part_under_mouse()
+					if part != null and _part_entry.has(part):
+						_make_root(_part_entry[part])
+				else:
+					_try_pick_up(event.ctrl_pressed)   # Ctrl: kopyala
 			MOUSE_BUTTON_RIGHT:
 				_rmb_pos = event.position
 				_rmb_click = true
@@ -945,7 +1491,12 @@ func _unhandled_input(event: InputEvent) -> void:
 				_help_panel.visible = not _help_panel.visible
 			KEY_X:
 				symmetry = not symmetry
-				_sym_check.set_pressed_no_signal(symmetry)
+				_sync_sym_ui()
+				_flash("Simetri: " + _sym_label())
+			KEY_V:
+				_cycle_sym()
+			KEY_1, KEY_2, KEY_3, KEY_4:
+				_set_tool(event.physical_keycode - KEY_0)
 			# KSP gibi: W/S burun (X), A/D sapma (Y), Q/E yatış (Z); Shift ters
 			KEY_W:
 				_rotate_user(0, -1.0)
@@ -974,7 +1525,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F:
 				_focus_camera()
 			KEY_ESCAPE:
-				_select("")
+				if _selected.is_empty() and _giz_uid >= 0:
+					_giz_uid = -1
+					_place_gizmo()
+				else:
+					_cancel_hold()
 
 
 const SCALES := [0.5, 0.625, 0.75, 0.875, 1.0, 1.25, 1.5, 1.75, 2.0]
@@ -1038,7 +1593,7 @@ func _update_hover() -> void:
 	if part != null:
 		var idx: int = _part_entry.get(part, -1)
 		var sc: float = (craft["parts"][idx] as Dictionary).get("scale", 1.0) if idx >= 0 else 1.0
-		_hover_label.text = "%s%s\n%d kg · %d HP\nSol tık: taşı · Sağ tık: pencere · Del: sil" % [
+		_hover_label.text = "%s%s\n%d kg · %d HP\nSol tık: tut (takılı olanlarla) · Ctrl: kopyala · Sağ tık: pencere · Del: sil" % [
 			part.title, "  ×%.2f" % sc if not is_equal_approx(sc, 1.0) else "", part.get_mass(), part.max_hp]
 		_hover_label.position = _mouse() + Vector2(18, 14)
 		_hover_label.visible = true
@@ -1049,7 +1604,7 @@ func _update_hover() -> void:
 		var on_center: bool = not _placement.is_empty() and absf((_placement["pos"] as Vector3).x) < 0.01
 		_place_label.text = "%s  ·  ölçek ×%.2f  ·  dönüş X%+d° Y%+d° Z%+d°  (adım %d°, C)  ·  simetri %s%s" % [
 			def.get("title", _selected), _scale, _user_rot.x, _user_rot.y, _user_rot.z, _angle_step,
-			"AÇIK" if symmetry else "kapalı", "  ·  ORTA ÇİZGİ (tek)" if on_center and _placement.get("ok", false) else ""]
+			_sym_label() + ("  ·  %d parça birlikte" % _held.size() if _held.size() > 1 else ""), "  ·  ORTA ÇİZGİ (tek)" if on_center and _placement.get("ok", false) else ""]
 		_place_label.visible = true
 	else:
 		_place_label.visible = false
@@ -1069,6 +1624,14 @@ func _set_overlay(part: Part, mat: Material) -> void:
 # ------------------------------------------------------------------ yerleştirme
 
 func _select(id: String, scale := 1.0, roll := 0.0) -> void:
+	# taşınmakta olan grup bırakılıyorsa yerine geri konur (paletten başka parça seçmek gibi)
+	if not _held_restore.is_empty():
+		craft = _held_restore
+		_held_restore = {}
+		if not _undo.is_empty():
+			_undo.pop_back()
+		_rebuild()
+	_held = []
 	_selected = id
 	_user_rot = Vector3(0, 0, roll)
 	_scale = scale
@@ -1076,19 +1639,45 @@ func _select(id: String, scale := 1.0, roll := 0.0) -> void:
 	_hover_part = null
 	for key in _cards:
 		_cards[key].set_pressed_no_signal(key == id)
-	if is_instance_valid(_ghost):
-		_ghost.queue_free()
-	if is_instance_valid(_ghost_mirror):
-		_ghost_mirror.queue_free()
-	_ghost = null
-	_ghost_mirror = null
+	_clear_ghosts()
 	if not id.is_empty():
 		_close_part_panel()
-		_ghost = _make_ghost(id, false)
-		_ghost_mirror = _make_ghost(id, true)
-		_craft_root.add_child(_ghost)
-		_craft_root.add_child(_ghost_mirror)
+		_ghost = _ghost_for(0, 0, false)
 	_refresh_nodes()
+
+
+func _clear_ghosts() -> void:
+	for k in _ghost_nodes:
+		if is_instance_valid(_ghost_nodes[k]):
+			_ghost_nodes[k].queue_free()
+	_ghost_nodes.clear()
+	_ghost = null
+	_ghost_mirror = null
+
+
+## Hayalet düğümü: üye m (0 = kök, >0 tutulan grubun diğer parçaları), simetri kopyası c.
+func _ghost_for(m: int, c: int, mirrored: bool) -> Node3D:
+	var key := "%d:%d" % [m, c]
+	if _ghost_nodes.has(key) and is_instance_valid(_ghost_nodes[key]):
+		return _ghost_nodes[key]
+	var def: Dictionary
+	var flip := mirrored
+	if m == 0:
+		if _held.is_empty():
+			def = PartLibrary.get_def(_selected)
+		else:
+			var root: Dictionary = (_held[0] as Dictionary).duplicate()
+			root.erase("scale")      # kökün ölçeği hayalet dönüşümünde (Shift+tekerlek)
+			def = VesselBuilder.entry_def(String(root["part"]), root, 1.0)
+			flip = flip != bool(root.get("flip", false))
+	else:
+		var e: Dictionary = _held[m]
+		def = VesselBuilder.entry_def(String(e["part"]), e, float(e.get("scale", 1.0)))
+		flip = flip != bool(e.get("flip", false))
+	var node := _make_ghost_def(def, flip, String(def.get("title", "")))
+	_craft_root.add_child(node)
+	_ghost_nodes[key] = node
+	return node
 
 
 ## Gövde parçası elde iken boştaki uç bağlantı noktalarını yeşil toplarla göster (KSP gibi).
@@ -1179,7 +1768,12 @@ func _pylon_occupied(pylon: Part, attach: Vector3) -> bool:
 
 
 func _make_ghost(id: String, mirrored: bool) -> Node3D:
-	var def := PartLibrary.get_def(id)
+	return _make_ghost_def(PartLibrary.get_def(id), mirrored, id)
+
+
+## Hayalet (yarı saydam önizleme) bir parça tanımından. Ayarlanabilir kanat / esnetilmiş gövde
+## gibi kayda özel tanımlarda ağ önbelleği anahtarı görselin kendisinden üretilir.
+func _make_ghost_def(def: Dictionary, mirrored: bool, id: String) -> Node3D:
 	var root := Node3D.new()
 	var visual := Node3D.new()
 	visual.position = def.get("visual_pivot", Vector3.ZERO)
@@ -1191,7 +1785,7 @@ func _make_ghost(id: String, mirrored: bool) -> Node3D:
 		var v: Dictionary = visuals[i]
 		if v.has("parent") or v.get("noscale", false) or v.get("mat", "") in ["flame", "flame_core", "heat_haze"]:
 			continue
-		var mi := VesselBuilder._make_mesh(v, "%s:%d" % [id, i])
+		var mi := VesselBuilder._make_mesh(v, "%s:%d:%d" % [id, i, v.hash()])
 		mi.material_overlay = _ghost_mat
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		visual.add_child(mi)
@@ -1205,20 +1799,71 @@ func _update_ghost() -> void:
 		return
 	var over_ui := get_viewport().gui_get_hovered_control() != null and _fake_mouse.x < 0.0
 	_placement = {} if over_ui else _compute_placement(_mouse())
+	for k in _ghost_nodes:
+		_ghost_nodes[k].visible = false
 	if _placement.is_empty():
-		_ghost.visible = false
-		_ghost_mirror.visible = false
 		return
 	var pos: Vector3 = _placement["pos"]
 	var rot: Vector3 = _placement["rot"]
-	_ghost.visible = true
-	var sc := Vector3.ONE * _effective_scale()
-	_ghost.transform = Transform3D(Basis.from_euler(rot * (PI / 180.0)).scaled_local(sc), pos)
-	var mirror: bool = symmetry and absf(pos.x) > SNAP and _placement["ok"]
-	_ghost_mirror.visible = mirror
-	if mirror:
-		_ghost_mirror.transform = Transform3D(Basis.from_euler(Vector3(rot.x, -rot.y, -rot.z) * (PI / 180.0)).scaled_local(sc), Vector3(-pos.x, pos.y, pos.z))
+	var t := Transform3D(Basis.from_euler(rot * (PI / 180.0)), pos)
+	# simetri kopyaları (ayna ya da radyal): kayıtla aynı kurallar (VesselBuilder.copy_ops)
+	var ops := VesselBuilder.copy_ops(_sym_entry(_placement))
+	var root_xf := t * Transform3D(Basis.from_scale(Vector3.ONE * _effective_scale()), Vector3.ZERO)
+	var inv_root := _held_root_xf.affine_inverse()
+	for m in maxi(_held.size(), 1):
+		var x := root_xf if m == 0 else t * inv_root * VesselBuilder.entry_xform(_held[m])
+		for c in ops.size():
+			var node := _ghost_for(m, c, ops[c]["mirror"])
+			node.transform = VesselBuilder.apply_op(ops[c], x)
+			node.visible = true
 	_ghost_mat.albedo_color = Color(0.3, 1.0, 0.5, 0.45) if _placement["ok"] else Color(1.0, 0.3, 0.25, 0.35)
+
+
+## Yerleştirmenin simetrisi (kayda yazılacak alanlar): {} tek, {"mirror": true} ayna,
+## {"radial": n, "axis": [x, y]} takıldığı parçanın ekseni çevresinde n kopya.
+func _sym_entry(pl: Dictionary) -> Dictionary:
+	if not symmetry or pl.is_empty() or not pl.get("ok", false):
+		return {}
+	var pos: Vector3 = pl["pos"]
+	if _sym_mode == "mirror":
+		return {"mirror": true} if absf(pos.x) > SNAP else {}
+	var c := Vector2.ZERO
+	var pp: Variant = pl.get("parent")
+	if pp is Part and is_instance_valid(pp):
+		c = Vector2((pp as Part).position.x, (pp as Part).position.y)
+	if Vector2(pos.x, pos.y).distance_to(c) < SNAP * 2.0:
+		return {}      # eksenin üstünde: tek parça
+	return {"radial": _radial, "axis": [c.x, c.y]}
+
+
+func _sym_label() -> String:
+	if not symmetry:
+		return "kapalı"
+	return "ayna ×2" if _sym_mode == "mirror" else "radyal ×%d" % _radial
+
+
+## V: simetri türü — ayna → radyal 2 → 3 → 4 → 6 → 8 → ayna.
+func _cycle_sym() -> void:
+	symmetry = true
+	if _sym_mode == "mirror":
+		_sym_mode = "radial"
+		_radial = 2
+	else:
+		var order := [2, 3, 4, 6, 8]
+		var i := order.find(_radial)
+		if i < 0 or i == order.size() - 1:
+			_sym_mode = "mirror"
+		else:
+			_radial = order[i + 1]
+	Sfx.play_ui("switch_2.ogg", -10.0, 1.2)
+	_flash("Simetri: " + _sym_label())
+	_sync_sym_ui()
+
+
+func _sync_sym_ui() -> void:
+	if _sym_check:
+		_sym_check.set_pressed_no_signal(symmetry)
+		_sym_check.text = "Simetri: %s  (X · V tür)" % _sym_label()
 
 
 func _effective_scale() -> float:
@@ -1265,7 +1910,7 @@ func _compute_placement(mouse: Vector2) -> Dictionary:
 			var dir: Vector3 = best["dir"]
 			var hp: Part = best["part"]
 			var p0: Vector3 = (best["pos"] as Vector3) + dir * (size.y if on_pylon else size.z) * 0.5
-			return {"pos": p0.snapped(Vector3.ONE * 0.001), "rot": _with_user(hp.rotation_degrees), "ok": true}
+			return {"pos": p0.snapped(Vector3.ONE * 0.001), "rot": _with_user(hp.rotation_degrees), "ok": true, "parent": hp}
 	var q := PhysicsRayQueryParameters3D.create(from, to, 2)
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if hit.is_empty() or not is_instance_valid(_preview):
@@ -1310,11 +1955,11 @@ func _compute_placement(mouse: Vector2) -> Dictionary:
 	pos = pos.snapped(Vector3.ONE * SNAP)
 	if absf(pos.x) < CENTER_SNAP:
 		pos.x = 0.0      # orta çizgiye yapış: tek parça (burun takımı, dikey kuyruk), ayna kopya yok
-	if symmetry and pos.x < -SNAP and cat in ["kanat", "kontrol"]:
+	if symmetry and _sym_mode == "mirror" and pos.x < -SNAP and cat in ["kanat", "kontrol"]:
 		pos.x = -pos.x   # simetride kaydı hep sağ taraf olarak tut, sol taraf ayna kopya
 		rot.z = 180.0 - rot.z
 	rot = _with_user(rot)
-	return {"pos": pos, "rot": rot, "ok": true}
+	return {"pos": pos, "rot": rot, "ok": true, "parent": hit_part}
 
 
 ## Yerleştirme dönüşüne kullanıcının açı adımlı dönüşünü (parçanın kendi eksenlerinde) ekle.
@@ -1337,41 +1982,74 @@ func _try_place(keep_selection: bool) -> void:
 		return
 	var pos: Vector3 = _placement["pos"]
 	var rot: Vector3 = _placement["rot"]
-	var entry := {"part": _selected, "pos": [pos.x, pos.y, pos.z]}
+	var parts: Array = craft["parts"]
+	var sym := _sym_entry(_placement)
+	var parent_uid := -1
+	var pp: Variant = _placement.get("parent")
+	if pp is Part and is_instance_valid(pp) and _part_entry.has(pp):
+		parent_uid = int(parts[_part_entry[pp]].get("uid", -1))
+	var group: Array
+	if _held.is_empty():
+		group = [{"part": _selected, "uid": CraftTree.next_uid(craft)}]
+	else:
+		# taşınan grup: kök yeni yerine, takılı olanlar onunla birlikte (simetri kuralları CraftTree'de)
+		var t_new := Transform3D(Basis.from_euler(rot * (PI / 180.0)), pos)
+		group = CraftTree.transform_group(craft, _held.duplicate(true), t_new * _held_root_xf.affine_inverse(), sym)
+	var entry: Dictionary = group[0]
+	entry["pos"] = [pos.x, pos.y, pos.z]
 	if rot != Vector3.ZERO:
 		entry["rot"] = [rot.x, rot.y, rot.z]
-	if symmetry and absf(pos.x) > SNAP:
-		entry["mirror"] = true
+	else:
+		entry.erase("rot")
+	CraftTree.set_sym(entry, sym)
 	var sc := _effective_scale()
 	if not is_equal_approx(sc, 1.0):
 		entry["scale"] = sc
-	_push_undo()
-	(craft["parts"] as Array).append(entry)
+	else:
+		entry.erase("scale")
+	if parts.is_empty():
+		entry["parent"] = -1
+	elif parent_uid >= 0:
+		entry["parent"] = parent_uid
+	else:
+		entry.erase("parent")    # takıldığı parça bilinmiyor: kurulumda temastan bağlanır (CraftTree.ensure)
+	if _held_restore.is_empty():
+		_push_undo()      # taşımada geri alma noktası tutarken kondu
+	_held_restore = {}
+	var first := parts.size()
+	parts.append_array(group)
 	Sfx.click()
 	_rebuild()
-	_pop((craft["parts"] as Array).size() - 1)
+	_pop(first)
+	if keep_selection and not _held.is_empty():
+		# Shift: aynı grubun bir kopyası elde kalsın (yeni uid'lerle)
+		var again: Array = []
+		for e: Dictionary in _held:
+			again.append(e.duplicate(true))
+		CraftTree.renumber(craft, again)
+		_held = again
+		return
+	var need := _missing_requirement(PartLibrary.get_def(String(entry["part"])))
+	if need != "":
+		_flash("⚠ " + need)
 	if not keep_selection:
 		_select("")
 
 
 ## Takılı parçayı tut: kayıttan çıkar ve aynı ölçekle elde taşı.
-func _try_pick_up() -> void:
+func _try_pick_up(copy := false) -> void:
 	var part := _part_under_mouse()
 	if part == null or not _part_entry.has(part):
 		_close_part_panel()
 		return
-	_pick_up_entry(_part_entry[part])
+	_grab(_part_entry[part], copy)
 
 
 func _try_delete() -> void:
 	var part := _hover_part if is_instance_valid(_hover_part) else _part_under_mouse()
 	if part == null or not _part_entry.has(part):
 		return
-	_push_undo()
-	(craft["parts"] as Array).remove_at(_part_entry[part])
-	_hover_part = null
-	Sfx.play_ui("switch_3.ogg", -6.0, 0.8)
-	_rebuild()
+	_delete_entry(_part_entry[part])
 
 
 # ------------------------------------------------------------------ istatistikler
@@ -1384,6 +2062,11 @@ func _update_stats() -> void:
 		_warn.text = ""
 		_com_marker.visible = false
 		_col_marker.visible = false
+		if is_instance_valid(_mcheck):
+			_mcheck.refresh(null)
+		if is_instance_valid(_dash):
+			_dash.set_data({"empty": true})
+		_warn_markers([])
 		return
 	var v := _preview
 	var dry := 0.0
@@ -1421,7 +2104,8 @@ func _update_stats() -> void:
 	var mass := v.mass
 	var intake_need := thrust / 70000.0 * 0.5
 	var intake_pct := intake_area / intake_need if intake_need > 0.0 else 1.0
-	var tw := thrust * EngineModule.AFTERBURNER_THRUST / maxf(mass * 9.81, 1.0)
+	var static_thrust := _thrust_at(v, 0.0, 0.0, true)   # duran uçakta (ramjette 0)
+	var tw := static_thrust / maxf(mass * 9.81, 1.0)
 	var com := v.com_local
 	_com_marker.visible = true
 	_com_marker.position = com
@@ -1440,8 +2124,9 @@ func _update_stats() -> void:
 		"Kütle (dolu)     %d kg" % mass,
 		"Kütle (boş)      %d kg" % dry,
 		"Yakıt            %d kg" % v.fuel_capacity(),
-		"İtki (AB)        %d kN" % (thrust * EngineModule.AFTERBURNER_THRUST / 1000.0),
+		"İtki (AB, duran) %d kN" % (static_thrust / 1000.0),
 		"İtki / ağırlık   %.2f" % tw,
+		"Kumanda          %s" % {"fbw": "FBW (sınırlı)", "hydro": "hidrolik", "mech": "mekanik"}.get(PlayerController.fcs_for(v.cockpit()), "—"),
 		"Kanat alanı      %.1f m²" % wing_area,
 		"Tahmini stall    %d km/sa" % stall_speed,
 		"Kararlılık payı  %+.2f m" % margin,
@@ -1452,31 +2137,84 @@ func _update_stats() -> void:
 	_stats.text += "
 
 " + _performance(v, thrust, wing_area, com)
+	_stats.text += Designs.stats_block(craft)   # hizmet geçmişi, seri üretim, prototip parçalar
+	# görsel pano: karakter altıgeni, denge terazisi, göstergeler, pist (DesignDashboard)
+	if is_instance_valid(_dash):
+		var est: Dictionary = MissionCheck.estimate(v) if thrust > 0.0 and wing_area >= 1.0 else {}
+		var zmin := INF
+		var zmax := -INF
+		var hp_sum := 0.0
+		for p in v.parts:
+			var bb := p.local_aabb(0.0)
+			zmin = minf(zmin, bb.position.z)
+			zmax = maxf(zmax, bb.end.z)
+			hp_sum += p.max_hp
+		_dash.set_data({
+			"v0_kmh": float(est.get("v0", 0.0)) * 3.6, "mach": float(est.get("v0", 0.0)) / Atmosphere.SPEED_OF_SOUND,
+			"climb": float(est.get("climb", 0.0)), "range_km": float(est.get("range_km", 0.0)),
+			"dto": float(est.get("dto", 0.0)), "can_roll": bool(est.get("can_roll", thrust > 0.0)),
+			"tw": tw, "wing_load": mass / maxf(wing_area, 0.1), "intake": intake_pct,
+			"guns": guns, "missiles": missiles, "bombs": v.bombs_left(false) + v.bombs_left(true),
+			"hp": hp_sum, "mass": mass, "com_z": com.z, "col_z": col.z, "has_col": col_area > 0.0,
+			"dry_z": com.z + float(est.get("cg_shift", 0.0)), "z_min": zmin, "z_max": zmax,
+		})
+	# uyarılar: tıklanınca ilgili parçalar yanıp söner ([url=tür])
 	var warns := PackedStringArray()
+	var warn_kinds: Array[String] = []   # Array (referans): lambda içinden eklenir
+	var w := func(text: String, kind: String) -> void:
+		warns.append("[url=%s]• %s[/url]" % [kind, text])
+		if not warn_kinds.has(kind):
+			warn_kinds.append(kind)
 	if v.cockpit_part() == null:
-		warns.append("• Kokpit yok — uçak kontrol edilemez")
+		w.call("Kokpit yok — uçak kontrol edilemez", "cockpit")
 	if thrust <= 0.0:
-		warns.append("• Motor yok")
+		w.call("Motor yok", "engine")
 	elif tw < 0.35:
-		warns.append("• İtki çok düşük")
+		w.call("İtki çok düşük", "engine")
 	if thrust > 0.0 and intake_pct < 0.99:
-		warns.append("• Hava alığı yetersiz (%%%d) — motor tam güç veremez" % (intake_pct * 100.0))
+		w.call("Hava alığı yetersiz (%%%d) — motor tam güç veremez" % (intake_pct * 100.0), "intake")
 	if v.fuel_capacity() <= 0.0 and thrust > 0.0:
-		warns.append("• Yakıt yok")
+		w.call("Yakıt yok", "fuel")
 	if wing_area < 1.0:
-		warns.append("• Kanat yok — uçamaz")
+		w.call("Kanat yok — uçamaz", "wing")
 	if col_area > 0.0 and margin < 0.0:
-		warns.append("• KARARSIZ: kaldırma merkezi ağırlık merkezinin önünde")
+		w.call("KARARSIZ: kaldırma merkezi ağırlık merkezinin önünde — kanadı geri al ya da ağırlığı öne", "wing")
 	elif col_area > 0.0 and margin < 0.4:
-		warns.append("• Kararlılık payı çok az (çevik ama zor uçar)")
+		# hafif uyarı: 3B ⚠ yok (panodaki denge terazisi zaten sarı gösteriyor)
+		warns.append("[url=wing]• Kararlılık payı çok az (çevik ama zor uçar)[/url]")
 	if not has_gear:
-		warns.append("• İniş takımı yok — pistten kalkamaz")
+		w.call("İniş takımı yok — pistten kalkamaz", "gear")
+	else:
+		# ana takım ağırlık merkezinin arkasında olmalı (yoksa uçak kuyruğu üstüne oturur)
+		var behind := false
+		for m in v.modules:
+			if m is LandingGearModule and m.part.position.z > com.z + 0.1:
+				behind = true
+		if not behind:
+			w.call("Bütün takımlar ağırlık merkezinin önünde — uçak kuyruğu üstüne oturur", "gear")
+	# kumanda yetkisi: yunuslama / yatış / sapmaya bakan yüzey (ya da TVC) var mı
+	var auth := Vector3.ZERO
+	for m in v.modules:
+		if m is ControlSurfaceModule:
+			auth += m.axis_weights.abs()
+		elif m is EngineModule and m.gimbal > 0.0:
+			auth += Vector3(1, 1, 0)
+	if v.cockpit_part() != null and wing_area >= 1.0:
+		if auth.x < 0.1:
+			w.call("Yunuslama kumandası yok — irtifa dümeni / elevon / stabilatör ekle", "control")
+		if auth.z < 0.1:
+			w.call("Yatış kumandası yok — kanada kanatçık / elevon ekle", "control")
+		if auth.y < 0.1:
+			w.call("Sapma kumandası yok — dikey kuyruğa dümen ekle", "control")
 	if v.bombs_left(true) > 0 and v.targeting_pod() == null:
-		warns.append("• Lazer bomba var ama hedefleme podu yok — güdümsüz düşer")
+		w.call("Lazer bomba var ama hedefleme podu yok — güdümsüz düşer", "pod")
 	if v.radar_missiles_left() > 0 and v.radar() == null:
-		warns.append("• Radar füzesi var ama radar yok — atılamaz")
+		w.call("Radar füzesi var ama radar yok — atılamaz", "radar")
 	_warn.text = "\n".join(warns) if not warns.is_empty() else "Uçuşa hazır ✓"
-	_warn.add_theme_color_override("font_color", Color(1.0, 0.55, 0.45) if not warns.is_empty() else Color(0.45, 1.0, 0.6))
+	_warn.add_theme_color_override("default_color", Color(1.0, 0.55, 0.45) if not warns.is_empty() else Color(0.45, 1.0, 0.6))
+	_warn_markers(PackedStringArray(warn_kinds))
+	if is_instance_valid(_mcheck):
+		_mcheck.refresh(v)
 
 
 # ------------------------------------------------------------------ kaydet / yükle / uç
@@ -1497,6 +2235,7 @@ func _save() -> void:
 	if f == null:
 		_flash("Kaydedilemedi!")
 		return
+	Designs.ensure_id(craft)   # kalıcı tasarım kimliği (hizmet kaydı, seri üretim)
 	f.store_string(JSON.stringify(craft, "\t"))
 	f.close()
 	_flash("Kaydedildi: %s" % craft["name"])
@@ -1542,6 +2281,8 @@ func _open_load() -> void:
 				first = data
 			var b := Button.new()
 			b.text = "  %s   ·  %d parça" % [data.get("name", "?"), _entry_count(data)]
+			if Designs.short_line(data) != "":
+				b.text += "   ·  " + Designs.short_line(data) + ("  ·  SERİ ÜRETİMDE" if Designs.is_fleet(data) else "")
 			b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 			b.focus_mode = Control.FOCUS_NONE
 			b.mouse_entered.connect(func() -> void: _show_load_preview(data))
@@ -1550,6 +2291,8 @@ func _open_load() -> void:
 				craft = data.duplicate(true)
 				_name_edit.text = craft.get("name", "")
 				_rebuild()
+				if Designs.service_line(craft) != "":
+					_flash("Hizmet geçmişi — " + Designs.service_line(craft))
 				_load_popup.hide())
 			_load_list.add_child(b)
 	_load_popup.popup_centered(Vector2i(900, 540))
@@ -1703,7 +2446,7 @@ func _show_load_preview(data: Dictionary) -> void:
 
 
 ## Tanımlardan özet: kütle, yakıt, itki/ağırlık, silahlar, kilitli parçalar.
-func _craft_summary(data: Dictionary) -> String:
+static func _craft_summary(data: Dictionary) -> String:
 	var mass := 0.0
 	var fuel := 0.0
 	var thrust := 0.0
@@ -1738,6 +2481,10 @@ func _craft_summary(data: Dictionary) -> String:
 	var locked := Career.locked_parts_in(data)
 	if not locked.is_empty():
 		lines.append("🔒 Kilitli parça var (Ar-Ge gerekir)")
+	if Designs.service_line(data) != "":
+		lines.append("Hizmet: " + Designs.service_line(data))
+	if Designs.is_fleet(data):
+		lines.append("SERİ ÜRETİMDE — filo tipi")
 	return "\n".join(lines)
 
 
@@ -1753,8 +2500,174 @@ func _launch() -> void:
 		_flash("Uçacak pilot yok — Kadro'dan hazır bir pilot seç")
 		_open_crew()
 		return
+	if not Game.pending_op.is_empty():
+		_test_flight()
+		return
+	if not Career.sandbox() and Game.args.is_empty():
+		# kariyer: uçak hazır, cephe haritasına dön (harekât oradan seçilir)
+		craft["name"] = _name_edit.text.strip_edges() if not _name_edit.text.strip_edges().is_empty() else "İsimsiz"
+		Game.flight_craft = craft.duplicate(true)
+		Game.menu_screen = "career"
+		FloatingOrigin.world_root = null
+		get_tree().change_scene_to_file("res://menu/main_menu.tscn")
+		return
 	_open_missions()
 
+
+# ------------------------------------------------------------------ görev hazırlığı
+
+## "Göreve çık" ile gelindi: üstte görev şeridi; PİSTE düğmesi test uçuşu olur, yanına
+## "TAMAM — GÖREVE BAŞLA" eklenir, menü düğmesi hazırlığı iptal eder.
+func _build_op_bar(root: Control, bar: HBoxContainer, launch: Button, menu_btn: Button) -> void:
+	var op: Dictionary = Game.pending_op
+	var def := MissionManager.get_def(String(op.get("mission", "")))
+	launch.text = "  TEST UÇUŞU  "
+	launch.tooltip_text = "Risksiz deneme uçuşu: para, kayıp, tecrübe yok. Uçuş bitince (Hangar) buraya dönülür."
+	launch.add_theme_stylebox_override("normal", _flat(Color(0.18, 0.32, 0.5), 6))
+	launch.add_theme_stylebox_override("hover", _flat(Color(0.24, 0.42, 0.62), 6))
+	var go := Button.new()
+	go.text = "  TAMAM ▶  "
+	go.tooltip_text = "Brifinge geç ve göreve başla"
+	go.focus_mode = Control.FOCUS_NONE
+	go.add_theme_stylebox_override("normal", _flat(Color(0.12, 0.5, 0.28), 6))
+	go.add_theme_stylebox_override("hover", _flat(Color(0.16, 0.62, 0.35), 6))
+	go.add_theme_font_size_override("font_size", 17)
+	go.pressed.connect(_confirm_op)
+	# görev provası: kartın rotası, saati ve havası; düşmansız, risksiz
+	var card := MissionCheck.card_for(op)
+	if not card.is_empty():
+		var reh := Button.new()
+		reh.text = " PROVA "
+		reh.focus_mode = Control.FOCUS_NONE
+		reh.tooltip_text = "GÖREV PROVASI: aynı rota, saat ve hava; düşman yok, risk yok. Hedef işaretli, süre sayılır. Bitince (Hangar) buraya dönülür."
+		reh.add_theme_stylebox_override("normal", _flat(Color(0.42, 0.32, 0.1), 6))
+		reh.add_theme_stylebox_override("hover", _flat(Color(0.55, 0.42, 0.14), 6))
+		reh.pressed.connect(_rehearsal)
+		bar.add_child(reh)
+	bar.add_child(go)
+	menu_btn.text = "◀ Görevi bırak"
+	# görev şeridi (üst çubuğun altında, ortada)
+	var strip := PanelContainer.new()
+	strip.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	strip.offset_top = 60
+	strip.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	var sb := _flat(Color(0.05, 0.1, 0.07, 0.9), 8)
+	sb.border_color = Color(0.45, 1.0, 0.65, 0.5)
+	sb.set_border_width_all(1)
+	sb.set_content_margin_all(8)
+	strip.add_theme_stylebox_override("panel", sb)
+	strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var l := Label.new()
+	l.text = "GÖREV HAZIRLIĞI:  %s   ·   uçağı hazırla, istersen test uçuşu yap, sonra TAMAM" % String(def.get("title", op.get("mission", "")))
+	l.add_theme_color_override("font_color", Color(0.55, 1.0, 0.7))
+	l.add_theme_font_size_override("font_size", 15)
+	strip.add_child(l)
+	root.add_child(strip)
+	# görev kartı + canlı kontrol listesi (sağ panelin solunda)
+	if not card.is_empty():
+		l.text = "GÖREV HAZIRLIĞI:  %s   ·   kartı karşıla, provada dene, sonra TAMAM" % String(card.get("title", def.get("title", "")))
+		_mcheck = MissionCheck.create(card)
+		_mcheck.anchor_left = 1.0
+		_mcheck.anchor_right = 1.0
+		_mcheck.offset_left = -660
+		_mcheck.offset_right = -310
+		_mcheck.offset_top = 104
+		root.add_child(_mcheck)
+
+
+func _craft_ready() -> bool:
+	if not is_instance_valid(_preview) or _preview.cockpit_part() == null:
+		_flash("Kokpit olmadan uçulamaz")
+		return false
+	var locked := Career.locked_parts_in(craft)
+	if not locked.is_empty():
+		_flash("Kilitli parça var (Ar-Ge'de aç): " + ", ".join(locked))
+		return false
+	if not Crew.can_fly(Crew.selected):
+		_flash("Uçacak pilot yok — Kadro'dan hazır bir pilot seç ya da al")
+		_open_crew()
+		return false
+	craft["name"] = _name_edit.text.strip_edges() if not _name_edit.text.strip_edges().is_empty() else "İsimsiz"
+	Game.flight_craft = craft.duplicate(true)
+	return true
+
+
+## Test uçuşu: görevsiz, risksiz serbest uçuş; hazırlık (pending_op) korunur, Hangar ile dönülür.
+func _test_flight() -> void:
+	if not _craft_ready():
+		return
+	Game.mode = "career"
+	Game.test_flight = true
+	Game.mission_card = {}
+	Game.mission = ""
+	Game.mission_region = ""
+	Game.free_start = "runway"
+	FloatingOrigin.world_root = null
+	get_tree().change_scene_to_file("res://main.tscn")
+
+
+## Tamam: kontrol listesinde ✗ varsa önce uyarı; sonra brifing ve gerçek görev (hazırlık biter).
+func _confirm_op() -> void:
+	if not _craft_ready():
+		return
+	var fails := _mcheck.failures() if is_instance_valid(_mcheck) else PackedStringArray()
+	if fails.is_empty():
+		_start_op()
+		return
+	var dlg := ConfirmationDialog.new()
+	dlg.theme = _theme
+	dlg.title = "Tasarım görevi karşılamıyor"
+	dlg.dialog_text = "Kontrol listesinde eksikler var:\n\n✗ " + "\n✗ ".join(fails) + "\n\nYine de göreve başlansın mı?"
+	dlg.ok_button_text = "Yine de başla"
+	dlg.cancel_button_text = "Tasarıma dön"
+	dlg.confirmed.connect(_start_op)
+	dlg.visibility_changed.connect(func() -> void:
+		if not dlg.visible:
+			dlg.queue_free())
+	add_child(dlg)
+	dlg.popup_centered()
+
+
+## Görev kartını ve tasarımın tahmini performansını uçuşa taşı (uçuş sonu değerlendirmesi için).
+func _carry_card() -> void:
+	Game.last_result = {}
+	Game.mission_card = {}
+	if is_instance_valid(_mcheck) and not _mcheck.card.is_empty():
+		Game.mission_card = _mcheck.card.duplicate(true)
+		Game.mission_card["design"] = _mcheck.est.duplicate(true)
+		Game.mission_card["check"] = _mcheck.result.duplicate(true)
+
+
+## Görev provası: kartın rotası/saati/havası, düşmansız; test uçuşu gibi risksiz, hazırlık sürer.
+func _rehearsal() -> void:
+	if not _craft_ready():
+		return
+	_carry_card()
+	Game.mode = "career"
+	Game.test_flight = true
+	Game.rehearsal = true
+	Game.mission = ""
+	Game.mission_region = ""
+	Game.free_start = "runway"
+	FloatingOrigin.world_root = null
+	get_tree().change_scene_to_file("res://main.tscn")
+
+
+func _start_op() -> void:
+	var op: Dictionary = Game.pending_op
+	var id := String(op.get("mission", ""))
+	Briefing.open(self, id, String(craft.get("name", "")), func() -> void:
+		_carry_card()
+		Game.rehearsal = false
+		Game.pending_op = {}
+		Game.mode = "career"
+		Game.test_flight = false
+		Game.mission = id
+		Game.mission_region = String(op.get("region", ""))
+		Game.free_start = "runway"
+		Game.menu_screen = "career"
+		FloatingOrigin.world_root = null
+		get_tree().change_scene_to_file("res://main.tscn"))
 
 func _start_flight(mission_id: String) -> void:
 	Game.mission = mission_id
@@ -1792,9 +2705,15 @@ func _build_ui() -> void:
 	bar.add_theme_constant_override("separation", 10)
 	top.add_child(bar)
 	var menu_btn := Button.new()
-	menu_btn.text = "◀ Menü"
+	menu_btn.text = "◀ Menü" if Career.sandbox() else "◀ Cephe"
 	menu_btn.focus_mode = Control.FOCUS_NONE
 	menu_btn.pressed.connect(func() -> void:
+		Game.pending_op = {}       # görev hazırlığı varsa bırakılır
+		Game.test_flight = false
+		Game.rehearsal = false
+		if not (craft.get("parts", []) as Array).is_empty() and _preview and _preview.cockpit_part() != null:
+			craft["name"] = _name_edit.text.strip_edges() if not _name_edit.text.strip_edges().is_empty() else "İsimsiz"
+			Game.flight_craft = craft.duplicate(true)
 		FloatingOrigin.world_root = null
 		get_tree().change_scene_to_file("res://menu/main_menu.tscn"))
 	bar.add_child(menu_btn)
@@ -1804,12 +2723,16 @@ func _build_ui() -> void:
 	title.add_theme_color_override("font_color", Color(0.45, 1.0, 0.65))
 	bar.add_child(title)
 	_name_edit = LineEdit.new()
-	_name_edit.custom_minimum_size.x = 260
+	_name_edit.custom_minimum_size.x = 190
 	_name_edit.placeholder_text = "Uçak adı"
 	bar.add_child(_name_edit)
-	for spec in [["Yeni", _new_craft], ["Yükle", _open_load], ["Kaydet", _save]]:
+	# kısa etiket + açıklama ipucu: üst çubuk 1600 px'te de sığsın
+	for spec in [["Yeni", _new_craft, ""], ["Yükle", _open_load, ""], ["Kaydet", _save, ""],
+			["Üretim", func() -> void: ProductionDialog.open(self), "Seri üretim"],
+			["Tünel", _toggle_tunnel, "Rüzgâr tüneli: akış, stall, yük haritası"]]:
 		var b := Button.new()
 		b.text = spec[0]
+		b.tooltip_text = spec[2]
 		b.focus_mode = Control.FOCUS_NONE
 		b.pressed.connect(spec[1])
 		bar.add_child(b)
@@ -1827,16 +2750,20 @@ func _build_ui() -> void:
 	_status = Label.new()
 	_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_status.clip_text = true                     # uzun mesaj çubuğu genişletmesin
+	_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_status.add_theme_color_override("font_color", Color(1.0, 0.85, 0.5))
 	bar.add_child(_status)
 	var launch := Button.new()
-	launch.text = "  PİSTE ÇIK  ▶  "
+	launch.text = "  PİSTE ÇIK  ▶  " if Career.sandbox() else "  CEPHEYE DÖN  ▶  "
 	launch.focus_mode = Control.FOCUS_NONE
 	launch.add_theme_stylebox_override("normal", _flat(Color(0.12, 0.5, 0.28), 6))
 	launch.add_theme_stylebox_override("hover", _flat(Color(0.16, 0.62, 0.35), 6))
 	launch.add_theme_font_size_override("font_size", 17)
 	launch.pressed.connect(_launch)
 	bar.add_child(launch)
+	if not Game.pending_op.is_empty():
+		_build_op_bar(root, bar, launch, menu_btn)
 
 	# sol: parça paleti
 	var left := PanelContainer.new()
@@ -1917,43 +2844,74 @@ func _build_ui() -> void:
 	var right := PanelContainer.new()
 	right.anchor_left = 1.0
 	right.anchor_right = 1.0
-	right.offset_left = -300
-	right.offset_right = -10
+	right.offset_left = -308
+	right.offset_right = -8
 	right.offset_top = 64
+	right.anchor_bottom = 1.0
+	right.offset_bottom = -12
 	root.add_child(right)
+	# pano + uyarılar + boya küçük ekranda sığmayabilir: dikey kaydırma
+	var info_scroll := ScrollContainer.new()
+	info_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	right.add_child(info_scroll)
 	var info := VBoxContainer.new()
 	info.add_theme_constant_override("separation", 8)
-	right.add_child(info)
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info_scroll.add_child(info)
 	var it := Label.new()
 	it.text = "UÇAK BİLGİSİ"
 	it.add_theme_color_override("font_color", Color(0.45, 1.0, 0.65))
 	info.add_child(it)
+	_dash = DesignDashboard.new()
+	info.add_child(_dash)
+	# rakamlar isteyene: "Ayrıntılar" altında katlı
+	var more := Button.new()
+	more.text = "Ayrıntılar ▸"
+	more.flat = true
+	more.toggle_mode = true
+	more.focus_mode = Control.FOCUS_NONE
+	more.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	more.add_theme_font_size_override("font_size", 13)
+	more.add_theme_color_override("font_color", Color(0.6, 0.75, 0.9))
+	info.add_child(more)
 	_stats = Label.new()
 	var mono := SystemFont.new()
 	mono.font_names = PackedStringArray(["Consolas", "Bahnschrift"])
 	_stats.add_theme_font_override("font", mono)
-	_stats.add_theme_font_size_override("font_size", 14)
+	_stats.add_theme_font_size_override("font_size", 13)
+	_stats.visible = false
 	info.add_child(_stats)
+	more.toggled.connect(func(on: bool) -> void:
+		_stats.visible = on
+		more.text = "Ayrıntılar ▾" if on else "Ayrıntılar ▸")
 	var legend := Label.new()
 	legend.text = "● sarı: ağırlık merkezi   ● mavi: kaldırma merkezi"
 	legend.add_theme_font_size_override("font_size", 12)
 	legend.add_theme_color_override("font_color", Color(0.7, 0.76, 0.82))
 	info.add_child(legend)
-	_warn = Label.new()
+	_warn = RichTextLabel.new()
+	_warn.bbcode_enabled = true
+	_warn.fit_content = true
+	_warn.scroll_active = false
+	_warn.meta_underlined = false
 	_warn.autowrap_mode = TextServer.AUTOWRAP_WORD
 	_warn.custom_minimum_size.x = 270
+	_warn.tooltip_text = "Uyarıya tıkla: ilgili parçalar yanıp söner"
+	_warn.meta_clicked.connect(func(meta: Variant) -> void: _blink(String(meta)))
 	info.add_child(_warn)
 	_sym_check = CheckButton.new()
 	_sym_check.text = "Simetri  (X)"
 	_sym_check.button_pressed = symmetry
 	_sym_check.focus_mode = Control.FOCUS_NONE
-	_sym_check.toggled.connect(func(on: bool) -> void: symmetry = on)
+	_sym_check.toggled.connect(func(on: bool) -> void:
+		symmetry = on
+		_sync_sym_ui())
 	info.add_child(_sym_check)
 	_build_paint_ui(info)
 
 	# alt ipucu: yalnız temel tuşlar; tam liste F1 penceresinde
 	var hint := Label.new()
-	hint.text = "Sol tık: yerleştir / taşı  ·  Sağ tık: parça penceresi  ·  X: simetri  ·  Sağ sürükle: kamera  ·  F1: tüm kısayollar"
+	hint.text = "1-4: araç  ·  Sol tık: tut / yerleştir (takılı olanlarla)  ·  Sağ tık: pencere  ·  X / V: simetri  ·  F1: tüm kısayollar"
 	hint.add_theme_font_size_override("font_size", 14)
 	hint.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	hint.offset_top = -34
@@ -1963,6 +2921,8 @@ func _build_ui() -> void:
 	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(hint)
 	_build_help(root)
+	_build_toolbar(root)
+	_sync_sym_ui()
 
 	# yerleştirme bilgisi (seçili parça, ölçek, dönüş)
 	_place_label = Label.new()
@@ -2091,12 +3051,39 @@ func _set_overlay_node(root: Node, mat: Material) -> void:
 			n.material_overlay = mat
 
 
+## Füze türüne göre açıklama ve gereksinim satırları (hangar ipucu).
+static func _missile_info(guidance: String) -> PackedStringArray:
+	match guidance:
+		"radar":
+			return PackedStringArray(["Radar güdümlü füze · 1–16 km", "⚠ GEREKLİ: Radar (radar burnu / radar parçası) — F4 ile hedef seç, radar yoksa atılamaz"])
+		"arm":
+			return PackedStringArray(["Radar avcısı (HARM) · 80 km'ye kadar", "Hedef: yayın yapan radar (SAM, gemi, radarı açık uçak) — ek parça gerekmez"])
+		"cruise":
+			return PackedStringArray(["Seyir füzesi · 110 km, GPS", "⚠ GEREKLİ: uçuşta haritadan GPS hedefi (M, sol tık)"])
+		"ship":
+			return PackedStringArray(["Gemi savar füze · 70 km", "Hedef: en yakın düşman gemisi ya da GPS hedefi (M)"])
+	return PackedStringArray(["Isı güdümlü (IR) füze · ~7 km", "Ek parça gerekmez — kilitsiz de atılabilir"])
+
+
+## Parçanın uçakta ister'i (radar / pod) karşılanmıyorsa açıklama; karşılanıyorsa "".
+func _missing_requirement(def: Dictionary) -> String:
+	if not is_instance_valid(_preview):
+		return ""
+	for m: Dictionary in def.get("modules", []):
+		if m.get("type", "") == "missile" and m.get("guidance", "ir") == "radar" and _preview.radar() == null:
+			return "%s RADAR ister — uçağa radar burnu ekle, yoksa atılamaz" % def.get("title", "")
+		if m.get("type", "") == "bomb" and (m.get("kind", "") == "lgb" or m.get("guided", false)) and _preview.targeting_pod() == null:
+			return "%s HEDEFLEME PODU ister — yoksa güdümsüz düşer" % def.get("title", "")
+	return ""
+
 func _part_tooltip(def: Dictionary) -> String:
 	var lines := PackedStringArray([def.get("title", ""), "%d kg · %d ₺ · %d HP" % [def.get("mass", 0), def.get("cost", 0), def.get("hp", 0)]])
 	for m: Dictionary in def.get("modules", []):
 		match m["type"]:
 			"engine":
 				lines.append("İtki %d kN (AB %d kN)" % [m.get("max_thrust", 0) / 1000.0, m.get("max_thrust", 0) * EngineModule.AFTERBURNER_THRUST / 1000.0])
+				var fr := float(m.get("fuel_rate", 0.0))
+				lines.append(("Tüketim %.1f kg/s tam gazda" % fr) + ("" if m.get("prop", false) or m.get("rocket", false) or m.get("no_ab", false) else "  ·  AB'de %.1f kg/s" % (fr * EngineModule.AFTERBURNER_FUEL)))
 			"fuel_tank":
 				lines.append("Yakıt %d kg" % m.get("capacity", 0))
 			"wing":
@@ -2108,7 +3095,7 @@ func _part_tooltip(def: Dictionary) -> String:
 			"gun":
 				lines.append("Top, %d mermi" % m.get("ammo", 0))
 			"missile":
-				lines.append("Isı güdümlü füze")
+				lines.append_array(_missile_info(String(m.get("guidance", "ir"))))
 			"landing_gear":
 				lines.append("İniş takımı (açılır/kapanır)")
 			"intake":
@@ -2120,9 +3107,15 @@ func _part_tooltip(def: Dictionary) -> String:
 			"flare":
 				lines.append("%d ısı tuzağı (O)" % m.get("count", 0))
 			"bomb":
-				lines.append("250 kg güdümsüz bomba")
+				var kind := String(m.get("kind", "lgb" if m.get("guided", false) else "normal"))
+				lines.append("Lazer güdümlü bomba" if kind == "lgb" else "Bomba (%s)" % kind)
+				if kind == "lgb":
+					lines.append("⚠ GEREKLİ: Hedefleme podu (yoksa güdümsüz düşer)")
 	if def.get("category", "") in VesselBuilder.SCALABLE:
 		lines.append("Boyutlandırılabilir (Shift+tekerlek)")
+	var proto := Designs.tooltip_line(def)
+	if proto != "":
+		lines.append(proto)
 	return "\n".join(lines)
 
 
@@ -2340,7 +3333,9 @@ func _refresh_pilot_btn() -> void:
 	if p.is_empty():
 		_pilot_btn.text = "  Pilot: —  "
 		return
-	_pilot_btn.text = "  👤 %s  ·  Sv %d%s  " % [p["name"], p["level"], "" if p["status"] == "hazır" else "  (KAYIP)"]
+	_pilot_btn.text = "  👤 %s %s  ·  Sv %d%s  " % [Medals.rank_short(p), p["name"], p["level"], "" if p["status"] == "hazır" else "  (KAYIP)"]
+	if Crew.wingman_index() >= 0:
+		_pilot_btn.text += "+ K2 %s  " % Crew.pilots[Crew.wingman_index()]["name"]
 
 
 func _open_crew() -> void:
@@ -2406,11 +3401,12 @@ func _fill_crew() -> void:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 14)
 		panel.add_child(row)
+		row.add_child(MedalView.rank_badge(int(p.get("rank", 0))))   # rütbe apoleti
 		var col := VBoxContainer.new()
 		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(col)
 		var name := Label.new()
-		name.text = "%s   Seviye %d%s" % [p["name"], p["level"], "" if alive else "   — KAYIP"]
+		name.text = "%s %s   Seviye %d%s" % [Medals.rank_name(p), p["name"], p["level"], "" if alive else ("   — YARALI" if p["status"] == "yaralı" else "   — KAYIP")]
 		name.add_theme_font_size_override("font_size", 16)
 		name.add_theme_color_override("font_color", Color.WHITE if alive else Color(0.9, 0.4, 0.35))
 		col.add_child(name)
@@ -2437,6 +3433,7 @@ func _fill_crew() -> void:
 		xl.add_theme_font_size_override("font_size", 12)
 		xl.add_theme_color_override("font_color", Color(0.7, 0.76, 0.82))
 		xp_row.add_child(xl)
+		col.add_child(MedalView.medal_row(p))   # madalya kurdeleleri + ayrıntı
 		var idx := i
 		if alive and i != Crew.selected:
 			var pick := Button.new()
@@ -2455,6 +3452,10 @@ func _fill_crew() -> void:
 			l.add_theme_color_override("font_color", Color(0.45, 1.0, 0.65))
 			l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 			row.add_child(l)
+		if alive and i != Crew.selected:
+			row.add_child(WingmanMenu.crew_button(idx, func() -> void:
+				_refresh_pilot_btn()
+				_fill_crew()))
 		if not alive:
 			var rm := Button.new()
 			rm.text = "  Kadrodan çıkar  "
@@ -2575,6 +3576,13 @@ func _refresh_locks() -> void:
 		if Career.is_unlocked(id):
 			b.text = "%s\n%d kg" % [def.get("title", id), def.get("mass", 0.0)]
 			b.modulate = Color.WHITE
+			# prototip parça rozeti (Designs): turuncu yazı
+			var badge := Designs.badge(id)
+			if badge != "":
+				b.text = "%s\n%s" % [def.get("title", id), badge]
+				b.add_theme_color_override("font_color", Color(1.0, 0.68, 0.3))
+			else:
+				b.remove_theme_color_override("font_color")
 		else:
 			b.text = "🔒 %s\nAr-Ge %s ₺" % [def.get("title", id), _thousands(Career.unlock_price(id))]
 			b.modulate = Color(0.75, 0.75, 0.75, 0.75) if Career.can_unlock(id) else Color(0.55, 0.55, 0.55, 0.6)
@@ -2601,82 +3609,52 @@ func _ask_unlock(id: String) -> void:
 	var enough := Career.money >= price
 	_unlock_dialog.dialog_text = "%s\n\n%s\n\nAr-Ge bedeli: %s ₺\nParan: %s ₺%s" % [def.get("title", id), _part_tooltip(def),
 		_thousands(price), _thousands(Career.money), "" if enough else "\n\nYETERSİZ PARA — görev yaparak kazan."]
-	_unlock_dialog.get_ok_button().disabled = not enough
+	var gate := Campaign.part_lock_reason(id)   # perde kapısı (Campaign)
+	if gate != "":
+		_unlock_dialog.dialog_text += "\n\n" + gate
+	_unlock_dialog.get_ok_button().disabled = not enough or gate != ""
 	_unlock_dialog.popup_centered(Vector2i(420, 0))
 
 
 # ------------------------------------------------------------------ performans tahmini
 
-## Kaba performans tahmini: sürükleme alanı (kanat cd0 + gövde ön alanı), itki (yoğunluk ve
-## pervane hız kaybıyla) dengesinden azami hız; kalkış hızı/mesafesi; tırmanma; dayanım/menzil;
-## yakıt bitince ağırlık merkezinin kayması.
-func _performance(v: Vessel, thrust_dry: float, wing_area: float, com_full: Vector3) -> String:
+## Kaba performans tahmini (MissionCheck.estimate: sürükleme alanı, itki eğrileri, azami hız,
+## kalkış hızı/mesafesi, tırmanma, dayanım/menzil, yakıt bitince ağırlık merkezinin kayması).
+## Görev kartı kontrol listesi de aynı tahmini kullanır.
+func _performance(v: Vessel, thrust_dry: float, wing_area: float, _com_full: Vector3) -> String:
 	if thrust_dry <= 0.0 or wing_area < 1.0:
 		return "PERFORMANS: motor ve kanat gerekli"
-	var mass := v.mass
-	var cda := 0.0
-	var fuel_rate := 0.0
-	var prop := false
-	var prop_vmax := 999.0
-	var ab := true
-	for m in v.modules:
-		if m is WingModule:
-			cda += m.cd0 * m.area
-		elif m is BodyDragModule:
-			cda += m.cd_front * m.front_area
-		elif m is EngineModule:
-			fuel_rate += m.fuel_rate
-			if m.prop:
-				prop = true
-				prop_vmax = minf(prop_vmax, m.prop_vmax)
-			if m.no_ab or m.prop or m.rocket:
-				ab = false
-	var t_max := thrust_dry * (EngineModule.AFTERBURNER_THRUST if ab else 1.0)
-	var vmax := func(alt: float, t: float) -> float:
-		var rho := Atmosphere.density(alt)
-		var best := 0.0
-		for i in 400:
-			var s := 20.0 + i * 2.0
-			var ram := clampf(1.0 - pow(s / prop_vmax, 2.0) * 0.85, 0.08, 1.0) if prop else 1.0
-			var thr := t * pow(rho / 1.225, 0.7) * ram
-			var drag := 0.5 * rho * s * s * cda * Atmosphere.wave_drag(s / Atmosphere.SPEED_OF_SOUND) * 1.25
-			if thr > drag:
-				best = s
-		return best
-	var v0: float = vmax.call(0.0, t_max)
-	var v8: float = vmax.call(8000.0, t_max)
-	var vs := sqrt(2.0 * mass * 9.81 / (1.225 * wing_area * 1.2))
-	var vto := vs * 1.2
-	var acc := thrust_dry / mass - 0.03 * 9.81
-	var dto := vto * vto / (2.0 * maxf(acc, 0.1)) * 1.15
-	var vc := clampf(v0 * 0.6, vs * 1.4, v0)
-	var dc := 0.5 * 1.225 * vc * vc * cda * 1.25
-	var climb := (thrust_dry - dc) * vc / (mass * 9.81)
-	var fuel := v.fuel_capacity()
-	var endurance := fuel / maxf(fuel_rate * 0.45, 0.01) / 60.0     # dk, seyir gazı
-	var range_km := endurance * 60.0 * vc * 0.9 / 1000.0
-	# boş yakıtla ağırlık merkezi
-	var dry_sum := 0.0
-	var dry_pos := Vector3.ZERO
-	for p in v.parts:
-		dry_sum += p.dry_mass
-		dry_pos += p.position * p.dry_mass
-	var shift := 0.0
-	if dry_sum > 0.0:
-		shift = (dry_pos / dry_sum).z - com_full.z
+	var e := MissionCheck.estimate(v)
+	var v0: float = e["v0"]
+	var v8: float = e["v8"]
+	var dto: float = e["dto"]
+	var shift: float = e["cg_shift"]
 	var lines := PackedStringArray([
 		"PERFORMANS (tahmini)",
-		"Kalkış hızı      %d km/sa" % (vto * 3.6),
+		"Kalkış hızı      %d km/sa" % (float(e["vto"]) * 3.6),
 		"Kalkış mesafesi  %d m" % dto,
 		"Azami hız (0 m)  %d km/sa  M%.2f" % [v0 * 3.6, v0 / Atmosphere.SPEED_OF_SOUND],
 		"Azami hız (8 km) %d km/sa  M%.2f" % [v8 * 3.6, v8 / 308.0],
-		"Tırmanma         %d m/s" % maxf(climb, 0.0),
-		"Dayanım          %d dk" % endurance,
-		"Menzil           %d km" % range_km,
+		"Tırmanma         %d m/s" % float(e["climb"]),
+		"Dayanım          %d dk" % float(e["endurance_min"]),
+		"Menzil           %d km" % float(e["range_km"]),
 		"Yakıt bitince AM %s %.2f m" % ["geri" if shift > 0.0 else "ileri", absf(shift)],
 	])
-	if dto > 2400.0:
+	if not e["can_roll"]:
+		lines.append("⚠ KALKAMAZ: düşük hızda itki yok (ramjet / zayıf motor) — ek motor ya da JATO tak")
+	elif dto > 2400.0:
 		lines.append("⚠ Pist (2400 m) yetmeyebilir")
+	if float(e["jato"]) > 0.0:
+		lines.append("JATO: +%d kN, %d sn (eylem paneli 7)" % [float(e["jato"]) / 1000.0, float(e["jato_time"])])
+	if e["ramjet"]:
+		lines.append("Ramjet: Mach 1.3+'ta tam güç, Mach 3'te ~1.9 kat")
+	if e["tvc"]:
+		lines.append("İtki yönlendirme: lüle ±15°, yavaşta da kumanda")
 	if absf(shift) > 0.6:
 		lines.append("⚠ Yakıt azaldıkça denge çok değişir")
 	return "\n".join(lines)
+
+
+## Uçağın toplam itkisi (N): MissionCheck.thrust_at (EngineModule ile aynı hız/irtifa eğrileri).
+func _thrust_at(v: Vessel, s: float, alt: float, ab: bool) -> float:
+	return MissionCheck.thrust_at(v, s, alt, ab)

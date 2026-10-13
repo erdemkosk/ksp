@@ -1,6 +1,6 @@
-# Hangar Savaşları (Prototip)
+# Gök Cephesi (Prototip)
 
-KSP + BDArmory tarzı parça tabanlı savaş uçağı oyunu. Godot 4.7.
+**Tasarla · Uç · Cepheyi geri al.** KSP + BDArmory tarzı parça tabanlı savaş uçağı oyunu. Godot 4.7.
 Tasarım ve yol haritası: [docs/TASARIM.md](docs/TASARIM.md)
 
 ## Çalıştırma
@@ -23,6 +23,7 @@ Godot_v4.7.2-stable_win64.exe --path .
 | Sol tık (kokpit) | kokpit anahtarlarını kullan |
 | Sağ tık (parça, dış kamera) | KSP gibi parça penceresi: sağlık, yük, motor/yakıt/kanat/takım durumu ve düğmeleri |
 | Space · V · O | ateş · silah seç (top / IR füze / radar füze / bomba / lazer bomba) · flare + chaff at |
+| Space basılı (füze atınca) | **füze kamerası**: fare ile füzenin çevresine bak (sağa-sola, yukarı-aşağı), tekerlek uzaklaş/yaklaş, orta tık arkaya dön; isabetten sonra 1.5 sn patlama noktasında kalır |
 | F4 · sol tık (hedef kutusu / radar) | radar hedefi seç — füze arayıcısı önce ona kilitlenir |
 | 1-9 | **eylem paneli** (sol alt), her eylemin sabit tuşu: 1 takım · 2 motor · 3 kanopi · 4 fişek · 5 hava freni · 6 fren paraşütü · 7 JATO · 8 hedefleme podu · 9 pilot indirsin · 0 yakıt boşalt (uçakta olmayanlar boş kalır, numaralar kaymaz) · Enter uçuşu bitir |
 | ⌫ ⌫ (iki kez) | **fırlatma koltuğu** |
@@ -36,12 +37,30 @@ Godot_v4.7.2-stable_win64.exe --path .
 | F1 · F3 | tuşlar penceresi · aerodinamik debug |
 | J | hangara dön |
 
+## Ana menü
+- **Kariyer · Cephe**: cephe haritası, karargâh mesajları, harekât istihbaratı, uçak ve pilot seçimi.
+- **Serbest Uçuş**: soldan uçak seç (arkadaki uçak değişir), başlangıç (pist soğuk / motor çalışır / havada) ve
+  isteğe bağlı görev seç, **UÇ**. Ya da hangarda düzenle / yeni uçak tasarla. Para yok, her şey açık, pilot ölmez.
+
+## Kariyer: cephe seferi
+- Harita 8 bölgeye ayrılır: **dost** (mavi), **çekişmeli** (sarı), **düşman** (kırmızı). Kırmızı kesik oklar
+  düşmanın baskı yönü. Kırmızı ◆ işaretler savaş harekâtı (cepheyi oynatır), yeşil ● işaretler destek görevi.
+- Savaş harekâtı yalnız çekişmeli bölgelerde ve bize komşu düşman bölgelerinde açılır. Başarı bölgeyi bir adım
+  bize çeker (düşman → çekişmeli → dost), başarısızlık geri iter. Üç günde bir düşman karşı taarruz yapabilir.
+  Bütün bölgeler dost olunca **zafer**, Ana Üs dışında her yer düşerse **cephe çöker**.
+- **Karargâh** (Alb. Kaya) her harekâttan sonra durumu anlatır. Harekât kartında **istihbarat** (tehditler) ve
+  **önerilen tasarım** var: uçağı tehdide göre hangarda kur, **Cepheye dön**.
+- **Test uçuşu (risksiz)**: aynı görevin simülasyonu, ödül / kayıp / tecrübe / cephe değişimi yok.
+- Gerçek uçuşta düşen uçağın **bütün parça bedeli**, ölen pilot için **5.000 ₺ tazminat** kasadan çıkar.
+  Görevi yarıda bırakmak (Esc → menü / yeniden başlat) geri çekilme sayılır.
+- Ar-Ge kilidi açık: başlangıç parçaları dışındakiler hangarda parasıyla açılır. Ana menü → Kariyer → **Yeni sefer**.
+
 ## Kariyer: para, Ar-Ge, görev ödülleri
 - Görev ödülü zorluğa göre (★ 6.000 · ★★ 11.000 · ★★★ 18.000 ₺), tekrarında yarısı; başarısız görevde
   küçük katılım payı. ★★ görevler 2, ★★★ görevler 5 tamamlanmış görevle açılır.
 - Hangarda kilitli (🔒) parçalar **Ar-Ge** ile açılır (parça fiyatının 4 katı). Kilitli parçalı uçak piste çıkamaz.
-- Uçak kaybı (düşme / fırlatma) parça bedelinin yarısı kadar sigorta payı keser; meydanda güvenli iniş bedavadır.
-- Yeni pilot almak 4.000 ₺. Ayarlar → **Serbest mod**: her şey açık, para yok.
+- Uçak kaybı (düşme / fırlatma) parça bedelinin tamamını keser; meydanda güvenli iniş bedavadır.
+- Yeni pilot almak 4.000 ₺. Serbest mod artık ana menüde ayrı bir mod.
 - Hangarda **performans tahmini**: kalkış hızı ve mesafesi, deniz seviyesi ve 8 km azami hız, tırmanma,
   dayanım, menzil, yakıt bitince ağırlık merkezinin kayması.
 
@@ -107,6 +126,35 @@ ve donanım özeti görünür. Kaydettiğin uçaklar **Benim uçaklarım** grubu
 - **JATO-1 Kalkış Roketi** (gövde yüzeyine): eylem panelinden **JATO ateşle** — 10 sn 30 kN, kısılamaz,
   tekrar yakılamaz; bitince ölü ağırlık. Ağır yüklü kısa kalkış için.
 - Test: `-- --enginetest` (itki–Mach tablosu, TVC torku, JATO yanması).
+
+## Gizlenme, chaff, saldırı silahları, düşman savunması
+- **Radar algılama (herkes aynı kuralla)**: menzil RCS ile büyür (büyük uçak, dış yükler, açık bomba
+  kapakları daha görünür), arazi görüşü keser, alçaktaki uçak yer yankısına karışır (aşağı bakan radar
+  ~500 m altını, yer radarı ufka yakın alçak hedefi zor görür), radara dik uçan alçak hedef çentikte kaybolur,
+  ECM menzili kısaltır. Düşman avcıları seni yalnız radar, göz (2.5 km) ve veri bağıyla (erken uyarı radarı,
+  AWACS, SAM, diğer avcılar) bulur. RWR'ın üstünde **GÖRÜNÜYORSUN / GİZLİ** ışığı.
+- **Arazi takibi**: Shift+U (ya da otopilot penceresi) — önündeki 8 sn'lik yolun en yükseğinin 100 m üstünde
+  (50–500 m ayarlı) vadileri izler.
+- **Chaff ayrı**: fişeklik artık flare + chaff (30 + 20); ayrı **Chaff Kovanı** (40). Savaş panelinde FLARE (O)
+  ve CHAFF (Ş) ayrı düğme ve sayaç, başlıkta **OTO** (İ): füze 4 km'ye girince IR'ye flare, radara chaff
+  kendiliğinden. Chaff parıldayan bir şerit bulutu; radar füzesinin arayıcısını, takip radarını ve SAM
+  kilitlenmesini şaşırtır (flare artık yalnız IR'ye karşı).
+- **Yeni silahlar**: RA-1 **radar avcısı (HARM)** — burna en yakın yayına (SAM, erken uyarı, gemi, radarı açık
+  uçak) kilitlenir, yayın kesilirse son konuma gider. SF-1 **seyir füzesi** (110 km) — haritada (M) sol tıkla GPS
+  hedefi seç, 60 m'de arazi takip ederek uçar, sonda yükselip dalar; SAM ve gemi topu onu düşürebilir.
+  GS-1 **gemi savar** (70 km) — denizin 15 m üstünde, son 14 km'de kendi radarı. SB-500 **süzülen bomba**
+  (GPS, yüksekten 25–40 km), MB-400 **misket** (300 m'de 40 bombacık), **1000 kg bomba**.
+- **Bombardıman**: **İç Bomba Bölmesi** (8 × 250 kg; Space basılı: kapaklar açılır, seri bırakır; açıkken
+  sürükleme + RCS), **Kuyruk Tareti** (arka yarıküredeki düşmana kendiliğinden ateş), **Bombacı kamerası**
+  (Ğ: aşağı bakan dar açı, CCIP ve bırakmaya kalan süre). Hazır uçak **Akbaba** (dört turbofan, iki bölme).
+- **Düşmanlar**: **Uzun menzilli SAM** (40 km; fırlatıcı + ayrı arama radarı + takip radarı — arama ölürse
+  15 km'ye düşer, takip ölürse atamaz; RWR'da S+), **erken uyarı radarı** (60 km, EW; gördüğünü bildirir),
+  **omuzdan atılan IR SAM** (4.5 km, RWR'da görünmez, haritada yok), **korvet** (30 km radar G, 12 km SAM,
+  füzeyi de vuran yakın savunma topları; batar), **AWACS** (80 km, A), **düşman havaalanı** (3 bölümlü pist,
+  hangar, park uçakları, kule, yakıt; alarmda pist sağlamsa avcı kaldırır). SAM'lar seyir füzesini de vurur.
+- **Görevler** (★★★): **SEAD**, **Derin Saldırı**, **Havaalanı Baskını**, **Uzaktan Vuruş**, **Deniz Saldırısı**.
+- Hazır uçaklar: **Yaban** (HARM + ECM), **Uzun Kol** (seyir füzesi + süzülen bomba), **Martı** (gemi savar),
+  **Akbaba** (ağır bombardıman), **Gözcü** (AWACS).
 
 ## Radar füzesi ve RWR
 - **RF-1 Radar Füzesi** (silah, Ar-Ge): radarlı uçakta F4 / tıkla seçilen hedefe (ya da burna en yakın
@@ -199,6 +247,47 @@ kaldırma merkezi; mavi sarının arkasında olmalı. Kaydet → `user://crafts/
 
 Sağ üstteki araç çubuğu: **Uçuş** bilgisi, **Otopilot**, **Ortam** (hava/saat/zaman hızı), **Tuşlar**.
 
+### Parça ağacı ve araçlar (KSP gibi)
+- Her parça takıldığı parçaya bağlıdır (eski tasarımlarda ağaç temastan çıkarılır). Bir parçayı
+  **tutunca** ona takılı her şey gelir; **Ctrl + sol tık** grubu kopyalar, **Del** grubu siler,
+  **Esc / sağ tık** taşınan grubu yerine geri koyar. Parça penceresinde **Kök yap**.
+- Alt ortadaki araç çubuğu, **1–4**: **Yerleştir** · **Kaydır** (parçaya tıkla, X/Y/Z oklarını sürükle;
+  5 cm adım, Shift serbest) · **Döndür** (halkalar; açı adımı C, Shift 1°) · **Kök** (tıklanan parça kök olur).
+  Ayna kopyasını sürüklemek asıl kaydı aynalı hareket ettirir; takılı parçalar da gelir.
+- **Simetri**: X aç/kapat, **V** tür: ayna ×2 → radyal ×2 ×3 ×4 ×6 ×8 (takılan parçanın ekseni çevresinde).
+- Uyarılar tıklanabilir: tıklayınca ilgili parçalar yanıp söner. Yeni kontroller: ana takım ağırlık
+  merkezinin önündeyse (kuyruk üstüne oturur), yunuslama / yatış / sapma kumandası yoksa.
+- Bilgi panelinde **kumanda sistemi**; performans tahmini her motoru kendi hız eğrisiyle hesaplar
+  (ramjet kalkışta itki vermez → "KALKAMAZ"), JATO kalkış koşusuna eklenir.
+
+### Rüzgâr tüneli ve canlı hangar
+- Üst çubukta **Rüzgâr tüneli**: hız, hücum açısı, yan kayma, irtifa, G kaydırıcıları. **Akış**
+  görünümünde kanatlar kaldırma oranına göre renklenir (stall kırmızı), uçağın üstünden akan duman
+  çizgileri kanadın arkasında aşağı sapar (stall'da çalkantılı kırmızı, şokta sarı). **Yük**
+  görünümünde seçilen G'de her parçanın dayanımına oranı. Sağda CL–hücum açısı eğrisi ve stall
+  noktası; "Açıyı G'ye göre bul" o hızda istenen G'yi veren açıyı arar (çekilemiyorsa uyarır).
+- Hangarda teknisyenler uçağın çevresinde dolaşıp durup bakar; alet arabası ve iş merdiveni.
+  **F12** fotoğraf (arayüz gizlenir, `user://photos/`).
+
+### Uçuş hissi
+- **Kumanda sistemi kokpitten**: Mk1 / balon / alçak kokpit **FBW** (G ve hücum açısı sınırlı, stall'a
+  sokmaz) · çerçeveli klasik kokpit **hidrolik** (sönümlü, sınırsız) · sivil kokpit **mekanik**
+  (sınırlayıcı yok, hızlandıkça çubuk ağırlaşır, stall'dan önce bip) · yolcu uçağı FBW ama 2.5 G.
+- **Kanat biçimi davranışı**: delta yüksek hücum açısına çıkar ama dönüşte enerji kaybeder (vorteks
+  kaldırması); ok kanatta stall uçtan başlar, burun kendiliğinden kalkar, kanatlar sallanır; ok kanat
+  yandan kaymada yatış etkisi verir (küçük dikey kuyrukla Hollanda yatışı); kalın düz kanatta M~0.75'te
+  şok: titreşim, burun düşer (Mach tuck), kumanda yüzeyleri zayıflar; alçakta yer etkisi (süzülme);
+  sapan kanatçık sürüklemesiyle ters sapma.
+- **Motor karakteri**: düşük devirde ağır, yüksek devirde çevik toparlanma; art yakıcı 0.5–0.9 sn
+  gecikmeyle "güm" diye yanar (13 km üstünde tutuşmayabilir); yüksek hücum açısında / yandan kaymada
+  **kompresör stall** (patlama, itki çöker); pervanede tork, P-faktörü, pervane izi ve jiroskopik etki
+  (ayna ikiz pervaneler ters döner, etkiler sıfırlanır).
+- **Ağır uçak geç cevap verir**: kontrol yüzeylerinin dönme hızı ve çubuk hareketi kütleyle yavaşlar
+  (12 t avcı tam hız, 45 t yolcu uçağı / AWACS yaklaşık yarı hız) — yapay zekâ uçaklarında da.
+- Kamera sarsıntısı ve titreşim sesi kanat tipine göre. **Uçuş sonu raporu**: en yüksek G, en çok
+  zorlanan parça, stall süresi, titreşim, kompresör stall, yakıt.
+- Testler: `-- --air --feeltest [--craft=...]`, `-- --hangar --craft=... --hangartreetest`.
+
 ## Görevler
 Hangarda **PİSTE ÇIK** → görev seç: **Serbest Uçuş**, **Eğitim Uçuşu** (halkalar + iniş), **Keşif**,
 **Kara Saldırısı** (konvoy + devriye avcı), **Önleme** (alarm kalkışı, 2 bombardıman, 5 dk),
@@ -249,6 +338,11 @@ kabini (6 koltuk), kargo bölmesi (4 sandık), düz kanat, hava freni (B), fren 
 yan / burun hava alığı, kanard, ok kanat, dikey kuyruk. Örnek uçaklar: **Kırlangıç** (yolcu),
 **Katır** (kargo).
 
+**Nakliye**: **Ağır Kargo Bölmesi** (10 sandık, makaralı zemin) ve **Kargo Rampası** (arkası yükselen
+kuyruk bölümü, altta yük kapısı, 2 sandık). Hazır uçak **Herkül C-130**: yolcu uçağı burun kokpiti,
+3 ağır bölme + rampa (32 sandık), yüksek kanat, 4 turboprop. Görev **Ağır Nakliye (kargo, A→B)**: en az
+8 sandıkla Ana Üs'ten kalk, Kuzey Havaalanı'na in ve dur; yer ekibi sandıkları tek tek boşaltır.
+
 ## Fizik notları
 - Motorlar **hava alığı** ister (J-70 ≈ 0.5 m²); yetmezse itki düşer, yüksek hücum açısında alık
   verimi azalır. Hangar uyarır. Kokpitin yan girişleri 0.6 m² sayılır.
@@ -268,8 +362,10 @@ yan / burun hava alığı, kanard, ok kanat, dikey kuyruk. Örnek uçaklar: **K�
   çekilemez — yüksek hızda S'ye tam basmak pilotu bayıltmaz. Kumanda yetkisi hıza göre yumuşakça ayarlanır
   ve yunuslama sönümleyici burnun ileri geri sallanmasını önler (akıcı çekiş). Kapatılırsa bayılma gerçekçi süreyle gelir.
 - **Fırlatma koltuğu** (⌫ iki kez ya da eylem panelinde FIRLAT'a iki tık; **yolcu uçağı burun kokpitinde yok**): kanopi atılır, pilot
-  ~40 m/s fırlar, 1.3 sn sonra paraşüt açılır (≈7 m/s alçalma, A/D W/S ile yönlendirilir). Kamera
-  pilotu izler; uçak düşse de pilot kurtulur ve tecrübe kazanır. Paraşüt açılmadan yere çarpan pilot
+  ~40 m/s fırlar, 1.3 sn sonra kumandalı (dikdörtgen) paraşüt açılır: ≈5 m/s alçalma, 7.5 m/s ileri
+  süzülüş; **A/D** döner (kanat yatar), **W** hızlanır, **S** frenler — yere yakın S basılı tutmak
+  yumuşak iniş (flare). Paraşütteyken fare serbest (zaman hızlandırma tıklanır), bakış sağ sürükle.
+  Kamera pilotu izler; uçak düşse de pilot kurtulur ve tecrübe kazanır. Paraşüt açılmadan yere çarpan pilot
   (çok alçakta / ters fırlatma) kayıp olur.
 - **Uçuşu bitir**: uçak yerde durunca ya da pilot yere inince eylem panelinde çıkar → uçuş raporu
   (süre, görev sonucu, XP, seviye) → Hangar · Tekrar uç · Ana menü. Görev başarıyla bittiğinde uçak

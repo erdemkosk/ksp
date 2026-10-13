@@ -1,0 +1,30 @@
+{
+	"name": "Uzun Kol Uzaktan Vuruş",
+	"group": "Saldırı",
+	"description": "Şahin gövdesinden uzaktan vuruş uçağı: kanat köklerinde iki SF-1 seyir füzesi (110 km — haritada (M) hedefe sol tıkla, menzilde bırak), dış askılarda iki SB-500 süzülen bomba (yüksekten 25–40 km), iki IR füze, hedefleme podu. SAM menziline girmeden vurur.",
+	"paint": {"scheme": "kamuflaj", "number": "76"},
+	"parts": [
+		{"part": "radar_nose",      "pos": [0, 0, -9.65]},
+		{"part": "cockpit_mk1",     "pos": [0, 0, -7.25]},
+		{"part": "tank_long",       "pos": [0, 0, -3.75]},
+		{"part": "tank_long",       "pos": [0, 0, 0.25]},
+		{"part": "jet_engine_big",  "pos": [0, 0, 3.75]},
+
+		{"part": "gun_pod",         "pos": [0.72, -0.35, -4.3]},
+		{"part": "flare_pod",       "pos": [0, -0.78, 1.8]},
+		{"part": "intake_side",     "pos": [0.88, 0.1, -2.2], "mirror": true},
+
+		{"part": "wing_delta",      "pos": [2.9, -0.2, 0.2], "mirror": true},
+		{"part": "elevon",          "pos": [2.2, -0.2, 3.1], "mirror": true},
+		{"part": "cruise_missile_rail", "pos": [1.75, -0.78, -0.3], "mirror": true},
+		{"part": "glide_bomb",      "pos": [3.3, -0.8, 0.6], "mirror": true},
+		{"part": "missile_rail",    "pos": [4.3, -0.5, 1.4], "mirror": true},
+
+		{"part": "wing_small",      "pos": [0, 1.6, 3.6], "rot": [0, 0, 90]},
+		{"part": "rudder",          "pos": [0, 1.6, 4.85], "rot": [0, 0, 90]},
+
+		{"part": "targeting_pod",   "pos": [0, -0.9, 0.6]},
+		{"part": "gear_nose",       "pos": [0, -0.6, -6.5]},
+		{"part": "gear_main",       "pos": [1.2, -0.6, 0.9], "mirror": true}
+	]
+}

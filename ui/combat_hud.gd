@@ -102,8 +102,8 @@ func _process(delta: float) -> void:
 	_blink += delta
 	_update_audio(delta)
 	_ccip_timer -= delta
-	var bomb_sel := _ok() and ((vessel.selected_weapon == Vessel.WEAPON_BOMB and vessel.bombs_left() > 0) \
-		or (vessel.selected_weapon == Vessel.WEAPON_LGB and vessel.bombs_left(true) > 0))
+	var bomb_sel := _ok() and vessel.selected_weapon in [Vessel.WEAPON_BOMB, Vessel.WEAPON_LGB, Vessel.WEAPON_CLUSTER,
+		Vessel.WEAPON_HEAVY, Vessel.WEAPON_BAY] and vessel.ammo_of(vessel.selected_weapon) > 0
 	if bomb_sel and _ccip_timer <= 0.0:
 		_ccip_timer = 0.05
 		_ccip = Bomb.simulate_impact(vessel.get_world_3d().direct_space_state, vessel.com_global() - vessel.up() * 0.8, vessel.linear_velocity)
@@ -173,6 +173,15 @@ func _draw() -> void:
 			Vessel.WEAPON_LGB:
 				if vessel.bombs_left(true) > 0:
 					_lgb_sight()
+			Vessel.WEAPON_CLUSTER, Vessel.WEAPON_HEAVY, Vessel.WEAPON_BAY:
+				if vessel.ammo_of(vessel.selected_weapon) > 0:
+					_bomb_sight()
+			Vessel.WEAPON_ARM, Vessel.WEAPON_SHIP:
+				if vessel.ammo_of(vessel.selected_weapon) > 0:
+					_emitter_sight()
+			Vessel.WEAPON_CRUISE, Vessel.WEAPON_GLIDE:
+				if vessel.ammo_of(vessel.selected_weapon) > 0:
+					_gps_sight()
 	if vessel.selected_weapon == Vessel.WEAPON_CARGO and vessel.cargo_left() > 0:
 		_cargo_sight()
 	_own_missiles(s)
@@ -360,6 +369,67 @@ func _bomb_sight() -> void:
 	_text_c(Vector2(c.x, size.y * 0.48 + 194), "BOMBA  ×%d" % vessel.bombs_left(), 16, HUD_COLOR, _bold)
 
 
+## Radar avcısı / gemi savar: görüş alanındaki yayın kaynakları (radar avcısında) ya da gemiler,
+## kilitli olan sarı elmasla; altında mesafe.
+func _emitter_sight() -> void:
+	var c := size * 0.5
+	var y0 := size.y * 0.48 + 170
+	var col := Color(1, 0.95, 0.4)
+	var arm := vessel.selected_weapon == Vessel.WEAPON_ARM
+	var lock: Node3D = null
+	for m in vessel.modules:
+		if m is MissileModule and m.loaded and m.weapon_kind() == vessel.selected_weapon and is_instance_valid(m.aim_node):
+			lock = m.aim_node
+	var nodes: Array = Missile.emitters(vessel.get_parent(), vessel.team) if arm else Warship.ships
+	for e in nodes:
+		if e == vessel or not is_instance_valid(e):
+			continue
+		var p: Vector3 = Missile._emitter_pos(e)
+		var sp: Variant = _proj(p)
+		if sp == null:
+			continue
+		var is_lock: bool = e == lock
+		_diamond(sp, 14.0 if is_lock else 8.0, col if is_lock else ENEMY)
+		var tag: String = e.tag if e is Warship else ("EW" if e is RadarStation else ("S" if e is SamSite else "F"))
+		_text_c(sp + Vector2(0, -18), tag, 12, col if is_lock else ENEMY, _bold)
+	if lock:
+		_text_c(Vector2(c.x, y0), "%s KİLİDİ  %.0f km" % ["YAYIN" if arm else "GEMİ", lock.global_position.distance_to(vessel.com_global()) / 1000.0], 18, col, _bold)
+	else:
+		_text_c(Vector2(c.x, y0), "burnu bir radar yayınına çevir (45°)" if arm else "gemi yok — GPS hedefine ya da ileri atılır", 15, HUD_COLOR)
+	_text_c(Vector2(c.x, y0 + 24), "%s  ×%d" % [vessel.weapon_name(), vessel.ammo_of(vessel.selected_weapon)], 16, HUD_COLOR, _bold)
+
+
+## Seyir füzesi / süzülen bomba: GPS hedef işareti (ekran dışındaysa kenarda ok), mesafe ve
+## menzil uyarısı (süzülen bomba için menzil ≈ yerden yükseklik × 6).
+func _gps_sight() -> void:
+	var c := size * 0.5
+	var y0 := size.y * 0.48 + 170
+	var col := Color(1, 0.85, 0.2)
+	var gp := vessel.strike_world()
+	if gp == Vector3.INF:
+		_text_c(Vector2(c.x, y0), "GPS HEDEF YOK — haritayı aç (M), hedefe sol tıkla", 15, HUD_COLOR)
+	else:
+		var sp: Variant = _proj(gp)
+		if sp != null:
+			draw_line(sp - Vector2(16, 0), sp + Vector2(16, 0), col, 2.0)
+			draw_line(sp - Vector2(0, 16), sp + Vector2(0, 16), col, 2.0)
+			_ring(sp, 11.0, col)
+		else:
+			var dir := _edge_dir(gp)
+			var p := c + dir * (minf(c.x, c.y) - 70.0)
+			var n := dir.orthogonal()
+			draw_colored_polygon(PackedVector2Array([p + dir * 16, p + n * 9, p - n * 9]), col)
+		var d := gp.distance_to(vessel.com_global())
+		var reach := 110000.0 if vessel.selected_weapon == Vessel.WEAPON_CRUISE else clampf(vessel.radar_altitude() * 6.0, 2000.0, 45000.0)
+		_text_c(Vector2(c.x, y0), "GPS HEDEF  %.1f km" % (d / 1000.0), 18, col, _bold)
+		if d < reach:
+			if fmod(_blink, 0.6) < 0.4:
+				_text_c(Vector2(c.x, y0 + 24), "MENZİLDE — BIRAK", 15, col, _bold)
+		else:
+			_text_c(Vector2(c.x, y0 + 24), "menzil dışı (≈ %d km)%s" % [reach / 1000.0, "" if vessel.selected_weapon == Vessel.WEAPON_CRUISE else " — yüksel"], 14, HUD_COLOR)
+	_text_c(Vector2(c.x, y0 + 46), "%s  ×%d" % [vessel.weapon_name(), vessel.ammo_of(vessel.selected_weapon)], 16, HUD_COLOR, _bold)
+
+
 ## Lazer güdümlü bomba: podun işaretlediği nokta, güdümsüz düşüş noktası (CCIP) ve bırakma
 ## bölgesi. Bomba kanatçıklarıyla düşüş noktasından işarete doğru yaklaşık irtifanın %90'ı
 ## kadar sapabilir (süzülme payı).
@@ -528,8 +598,8 @@ func _scan_rwr() -> void:
 		if ep2.distance_to(me) < st.range_m * 1.2 and Missile.terrain_clear(ep2, me):
 			out.append({"pos": st.global_position, "sym": "EW", "level": 0, "key": st.get_instance_id()})
 	for sh in Warship.ships:
-		if is_instance_valid(sh) and not sh.destroyed and sh.team != vessel.team and sh.global_position.distance_to(me) < Warship.RADAR_RANGE * 1.2:
-			out.append({"pos": sh.global_position, "sym": "G", "level": 1 if sh.tracking() == vessel else 0, "key": sh.get_instance_id()})
+		if is_instance_valid(sh) and not sh.destroyed and sh.team != vessel.team and sh.global_position.distance_to(me) < sh.radar_range * 1.2:
+			out.append({"pos": sh.global_position, "sym": sh.tag, "level": 1 if sh.tracking() == vessel else 0, "key": sh.get_instance_id()})
 	for n in vessel.get_parent().get_children():
 		if not n is Vessel or n == vessel or n.parts.is_empty() or n.team == vessel.team or not n.has_power():
 			continue
@@ -561,7 +631,7 @@ func _scan_rwr() -> void:
 		if th["level"] > int(_rwr_levels.get(th["key"], -1)):
 			Sfx.play_ui("lock_tone.ogg" if th["level"] == 0 else "caution_beep.ogg", -12.0 if th["level"] == 0 else -6.0, 0.7 if th["level"] == 0 else 1.4)
 			if th["level"] == 1:
-				var who: String = {"S": "SAM", "S+": "UZUN MENZİLLİ SAM", "G": "GEMİ", "A": "AWACS"}.get(th["sym"], "AVCI RADAR")
+				var who: String = {"S": "SAM", "S+": "UZUN MENZİLLİ SAM", "G": "GEMİ", "DD": "FIRKATEYN", "CV": "UÇAK GEMİSİ", "A": "AWACS"}.get(th["sym"], "AVCI RADAR")
 				vessel.system_message.emit("RWR: %s KİLİDİ" % who)
 	_rwr_levels = seen
 	_rwr = out

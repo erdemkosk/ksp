@@ -174,7 +174,7 @@ func _draw_hud() -> void:
 
 func _info() -> void:
 	var pinfo := Crew.current()
-	var ptxt := ("  ·  %s (Sv %d)" % [pinfo["name"], pinfo["level"]]) if not pinfo.is_empty() else ""
+	var ptxt := ("  ·  %s %s (Sv %d)" % [Medals.rank_short(pinfo), pinfo["name"], pinfo["level"]]) if not pinfo.is_empty() else ""
 	var title := "%s  ·  %s%s" % [vessel.craft_name, camera.mode_name(), ptxt]
 	var ts := ("  ·  gün x%d" % Weather.time_scale()) if Weather.time_scale() > 1.0 else ""
 	var sub := "%s  ·  yerel saat %s%s" % [Weather.preset_name(), Weather.format_hour(Weather.local_hour(vessel.global_position)), ts]
@@ -871,7 +871,7 @@ func _wrap(text: String, n: int) -> Array:
 const PFD_SKY := Color(0.16, 0.42, 0.78)
 const PFD_GROUND := Color(0.45, 0.3, 0.16)
 const PFD_W := 640.0
-const PFD_H := 176.0
+const PFD_H := 202.0
 
 
 ## Cam kokpit birincil uçuş ekranı: gaz | hız şeridi | yapay ufuk | irtifa şeridi + VS | G,
@@ -894,7 +894,8 @@ func _pfd(s: Vector2) -> void:
 	_pfd_ils(Vector2(cx, cy), 62.0)
 	_pfd_alt_tape(Rect2(box.end.x - 178, box.position.y + 14, 104, 124))
 	_pfd_g_bar(Rect2(box.end.x - 50, box.position.y + 14, 34, 120))
-	_pfd_compass(Rect2(cx - 150, box.end.y - 28, 300, 20))
+	_pfd_compass(Rect2(cx - 150, box.end.y - 54, 300, 20))
+	_pfd_fuel(Rect2(box.position.x + 16, box.end.y - 28, box.size.x - 32, 18))
 	# açık hava freni / fren paraşütü: PFD üstünde sarı etiket
 	var tags := PackedStringArray()
 	for m in vessel.modules:
@@ -907,6 +908,43 @@ func _pfd(s: Vector2) -> void:
 	if not tags.is_empty():
 		_text_c(Vector2(box.position.x + 116, box.position.y - 8), "  ·  ".join(tags), 13, Color(1.0, 0.75, 0.25), _font_bold)
 
+
+## Yakıt satırı (PFD altı): kalan yakıt çubuğu, anlık akış (motorlar + boşaltma), bu akışla
+## kalan süre ve menzil. Motorların tüketimi farklı: J-120 art yakıcıda ~10 kg/s, turbofan ~1 kg/s.
+var _flow_smooth := 0.0
+
+func _pfd_fuel(r: Rect2) -> void:
+	var cap := vessel.fuel_capacity()
+	if cap <= 0.0:
+		return
+	var fuel := vessel.fuel_amount()
+	var frac := clampf(fuel / cap, 0.0, 1.0)
+	var flow := 0.0
+	for e in vessel.engines():
+		flow += e.fuel_flow
+	if vessel.fuel_dumping:
+		flow += vessel.dump_rate()
+	_flow_smooth = lerpf(_flow_smooth, flow, 0.08)
+	var dim := Color(0.62, 0.7, 0.76)
+	var col := Color(0.45, 1.0, 0.65) if frac > 0.25 else (Color(1.0, 0.75, 0.25) if frac > 0.1 else Color(1.0, 0.3, 0.25))
+	_text(Vector2(r.position.x, r.position.y + 13), "YAKIT", 11, dim, _font_bold)
+	var bar := Rect2(r.position.x + 44, r.position.y + 4, 120, 10)
+	_root.draw_rect(bar, Color(1, 1, 1, 0.08))
+	_root.draw_rect(Rect2(bar.position, Vector2(bar.size.x * frac, bar.size.y)), col)
+	_text(Vector2(bar.end.x + 8, r.position.y + 13), "%d kg  %%%d" % [fuel, frac * 100.0], 12, col, _font_bold)
+	var parts := PackedStringArray()
+	parts.append("akış %.1f kg/s" % _flow_smooth)
+	if _flow_smooth > 0.05:
+		var sec := fuel / _flow_smooth
+		parts.append("süre %d:%02d" % [int(sec / 60.0), int(sec) % 60])
+		var spd := vessel.linear_velocity.length()
+		if spd > 30.0:
+			parts.append("menzil %d km" % (spd * sec / 1000.0))
+	if vessel.fuel_dumping:
+		parts.append("BOŞALTILIYOR")
+	var txt := "   ·   ".join(parts)
+	var w := _font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+	_text(Vector2(r.end.x - w, r.position.y + 13), txt, 12, Color(1.0, 0.75, 0.25) if vessel.fuel_dumping else dim, _font_bold)
 
 func _pfd_attitude(c: Vector2, r: float) -> void:
 	var pitch := vessel.pitch_deg()

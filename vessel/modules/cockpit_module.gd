@@ -46,6 +46,9 @@ var _drop_override: Variant = null
 var _L: Dictionary
 var _canopy_t := 0.0
 var _canopy: Node3D
+var _far_t := 0.0
+var _glass_mi: MeshInstance3D
+var _rain_wet := 0.0      ## kanopideki yağmur damlası yoğunluğu (0..1): yağmurda birikir, sonra kurur
 var _in: Node3D
 var _exit := Vector3.ZERO
 var _stick: Node3D
@@ -98,6 +101,32 @@ func on_attached() -> void:
 	_in.add_child(_panel)
 	_lamp_off = VesselBuilder.material("dark", Color(0.13, 0.12, 0.1))
 	_build_canopy()
+	pilot = PilotModel.new()
+	pilot.name = "Pilot"
+	pilot.pilot_name = pilot_name
+	_in.add_child(pilot)
+	if layout == "civil":
+		copilot = PilotModel.new()
+		copilot.name = "Copilot"
+		copilot.pilot_name = "Yardımcı pilot"
+		_in.add_child(copilot)
+		_make_visible_in_cockpit.call_deferred(copilot)
+	_apply_lod.call_deferred()
+	if Game.args.has("fullcockpit"):
+		_ensure_interior()
+
+
+## Kokpit içi yüzlerce küçük ağ (anahtar, gösterge, ekran): uzaktan seçilmez ama her yapay zekâ
+## uçağında çiziliyordu (~460 çizim çağrısı). Görünürlük mesafesi: içi 70 m, pilot 250 m; kanopi
+## camı ve çerçevesi sınırsız. Motor kesimi bedava (GPU tarafı), kare başına maliyet yok.
+## Kokpit içi ayrıntılar (kumandalar, anahtarlar, ekranlar, göstergeler; ~590 düğüm, ~30 ms) ancak
+## kamera yaklaşınca / kokpite girilince kurulur: uzaktan doğan yapay zekâ uçakları takılma yapmasın.
+var _interior_built := false
+
+func _ensure_interior() -> void:
+	if _interior_built:
+		return
+	_interior_built = true
 	_build_pedals()
 	if layout == "civil":
 		_build_civil_controls()
@@ -109,17 +138,35 @@ func on_attached() -> void:
 	_build_gauges()
 	_build_details()
 	_build_scale_fill()
-	pilot = PilotModel.new()
-	pilot.name = "Pilot"
-	pilot.pilot_name = pilot_name
-	_in.add_child(pilot)
-	if layout == "civil":
-		copilot = PilotModel.new()
-		copilot.name = "Copilot"
-		copilot.pilot_name = "Yardımcı pilot"
-		_in.add_child(copilot)
-		_make_visible_in_cockpit.call_deferred(copilot)
+	_apply_lod()
 
+func _apply_lod() -> void:
+	var roots: Array[Node] = [_in]
+	var fixed := part.get_node_or_null("VisualFixed")
+	if fixed:
+		roots.append(fixed)
+	for r in roots:
+		var stack: Array[Node] = [r]
+		while not stack.is_empty():
+			var n: Node = stack.pop_back()
+			if n == _canopy:
+				continue
+			var far := 250.0 if n is PilotModel else 70.0
+			if n is PilotModel:
+				_lod_tree(n, far)
+				continue
+			stack.append_array(n.get_children())
+			if n is GeometryInstance3D:
+				(n as GeometryInstance3D).visibility_range_end = far
+
+
+func _lod_tree(root: Node, far: float) -> void:
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		stack.append_array(n.get_children())
+		if n is GeometryInstance3D:
+			(n as GeometryInstance3D).visibility_range_end = far
 
 ## Yardımcı pilotun kafası kokpit kamerasında da görünsün (kendi kafamız gizli kalır).
 func _make_visible_in_cockpit(m: PilotModel) -> void:
@@ -145,6 +192,20 @@ func physics_tick(delta: float) -> void:
 func _process(delta: float) -> void:
 	if part == null or vessel == null:
 		return
+	_update_rain(delta)
+	# uzaktaki uçakta (yapay zekâ) pilot pozu, kumandalar: saniyede 2 kez yeter
+	var cam := get_viewport().get_camera_3d()
+	if not _interior_built:
+		if cam and ((cam is FlightCamera and (cam as FlightCamera).target == vessel) or cam.global_position.distance_squared_to(part.global_position) < 3600.0):
+			_ensure_interior()
+		else:
+			pilot.visible = occupied
+			return
+	if cam and not (cam is FlightCamera and (cam as FlightCamera).target == vessel) and cam.global_position.distance_squared_to(part.global_position) > 22500.0:
+		_far_t -= delta
+		if _far_t > 0.0:
+			return
+		_far_t = 0.5
 	var seats: Array = _L["seats"]
 	var recline: float = _L["recline"]
 	# kumandalar oyuncunun girdisini izler (klavyede ani sıçramasın diye hafif yumuşatılmış)
@@ -262,7 +323,12 @@ func _build_canopy() -> void:
 			top -= 0.04
 	# yarım küre cam: tabanı gövde açıklığının kenarında (alt yarı yok; açılınca altında koyu cam görünmez)
 	var c := edge_y - 0.02
-	var h := maxf(top - c, 0.2)
+	# büyütülmüş kokpitte (ör. ×1.5 yolcu / AWACS gövdesi) cam da oranını korur: tepe yüksekliği
+	# normal boydaki kokpitte olduğu gibi hesaplanıp ölçek oranıyla büyütülür (yoksa cam basık kalır,
+	# büyüyen gövde açıklığının kenarlarında boşluk görünür)
+	var ratio := maxf(s / PartLibrary.WORLD_SCALE, 1.0)
+	var c_ref := shell_r / ratio * sin(edge) - 0.02
+	var h := maxf((top - c_ref) * ratio, 0.2)
 	var w := edge_x * (0.94 if canopy_style == "low" else 1.04)
 	var z0 := (-0.95 if civil else -0.75) * s
 	var z1 := (0.85 if civil else 1.0) * s
@@ -287,6 +353,7 @@ func _build_canopy() -> void:
 	sphere.rings = 24
 	glass.mesh = sphere
 	glass.material_override = mat
+	_glass_mi = glass
 	glass.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	glass.scale = Vector3(w * 2.0, h * 2.0, half_l * 2.0)
 	glass.position = center - _canopy.position
@@ -390,41 +457,41 @@ func _build_controls() -> void:
 
 
 func _build_switches() -> void:
-	var v := vessel
+	# anahtarlar her karede güncel uçağı okur (kurulumda vessel henüz atanmamış olabilir)
 	# --- Ön panel (pilota bakan), MFD'lerin altındaki şerit ---
 	_add_switch("İNİŞ TAKIMI", _pp(-0.25, -0.118, 0.006), Vector3(75, 0, 0), "gear",
-		func() -> bool: return v.gear_down, func() -> void: v.gear_down = not v.gear_down)
+		func() -> bool: return vessel.gear_down, func() -> void: vessel.gear_down = not vessel.gear_down)
 	_add_switch("MASTER ARM", _pp(-0.335, -0.118, 0.006), Vector3(75, 0, 0), "guarded",
-		func() -> bool: return v.master_arm, func() -> void: v.master_arm = not v.master_arm)
+		func() -> bool: return vessel.master_arm, func() -> void: vessel.master_arm = not vessel.master_arm)
 	_add_switch("KANOPİ", _pp(0.25, -0.118, 0.006), Vector3(75, 0, 0), "button",
 		func() -> bool: return canopy_open, func() -> void: canopy_open = not canopy_open)
 	_add_switch("RADAR", _pp(0.335, -0.118, 0.006), Vector3(75, 0, 0), "toggle",
-		func() -> bool: return v.radar_on, func() -> void: v.radar_on = not v.radar_on)
+		func() -> bool: return vessel.radar_on, func() -> void: vessel.radar_on = not vessel.radar_on)
 	# --- Sol konsol: motor ve elektrik (önden arkaya) ---
 	var x := -0.36
 	var y := 0.5
 	_add_switch("BATARYA", Vector3(x, y, -0.24), Vector3.ZERO, "toggle",
-		func() -> bool: return v.battery_on, func() -> void: v.battery_on = not v.battery_on)
+		func() -> bool: return vessel.battery_on, func() -> void: vessel.battery_on = not vessel.battery_on)
 	_add_switch("JFS", Vector3(x, y, -0.16), Vector3.ZERO, "button",
-		func() -> bool: return v.jfs_on, func() -> void: v.jfs_on = not v.jfs_on and v.has_power())
+		func() -> bool: return vessel.jfs_on, func() -> void: vessel.jfs_on = not vessel.jfs_on and vessel.has_power())
 	_add_switch("MOTOR ÇALIŞTIR", Vector3(x, y, -0.08), Vector3.ZERO, "button",
-		func() -> bool: return _engine_starting(), func() -> void: v.start_engines())
+		func() -> bool: return _engine_starting(), func() -> void: vessel.start_engines())
 	_add_switch("YAKIT KES", Vector3(x, y, 0.0), Vector3.ZERO, "guarded",
-		func() -> bool: return not v.engines_running(), func() -> void: v.shutdown_engines())
+		func() -> bool: return not vessel.engines_running(), func() -> void: vessel.shutdown_engines())
 	_add_switch("PARK FRENİ", Vector3(x, y, 0.08), Vector3.ZERO, "handle",
-		func() -> bool: return v.parking_brake, func() -> void: v.parking_brake = not v.parking_brake)
+		func() -> bool: return vessel.parking_brake, func() -> void: vessel.parking_brake = not vessel.parking_brake)
 	# --- Sağ konsol: ışıklar ve otomatik sistemler ---
 	x = 0.36
 	_add_switch("KOKPİT IŞIĞI", Vector3(x, y, -0.24), Vector3.ZERO, "button",
-		func() -> bool: return v.cockpit_light, func() -> void: v.cockpit_light = not v.cockpit_light)
+		func() -> bool: return vessel.cockpit_light, func() -> void: vessel.cockpit_light = not vessel.cockpit_light)
 	_add_switch("SAS", Vector3(x, y, -0.16), Vector3.ZERO, "toggle",
-		func() -> bool: return v.sas, func() -> void: v.sas = not v.sas)
+		func() -> bool: return vessel.sas, func() -> void: vessel.sas = not vessel.sas)
 	_add_switch("OTOPİLOT", Vector3(x, y, -0.08), Vector3.ZERO, "button",
-		func() -> bool: return v.autopilot_active, func() -> void: v.autopilot_toggle.emit())
+		func() -> bool: return vessel.autopilot_active, func() -> void: vessel.autopilot_toggle.emit())
 	_add_switch("SEYİR IŞIKLARI", Vector3(x, y, 0.0), Vector3.ZERO, "toggle",
-		func() -> bool: return v.lights_on, func() -> void: v.lights_on = not v.lights_on)
+		func() -> bool: return vessel.lights_on, func() -> void: vessel.lights_on = not vessel.lights_on)
 	_add_switch("DIŞARI ÇIK", Vector3(0.42, 0.6, 0.42), Vector3(0, 0, -30), "eject",
-		func() -> bool: return not occupied, func() -> void: v.request_eva.emit())
+		func() -> bool: return not occupied, func() -> void: vessel.request_eva.emit())
 
 
 # ------------------------------------------------------------------ sivil kokpit
@@ -463,35 +530,35 @@ func _build_civil_controls() -> void:
 
 
 func _build_civil_switches() -> void:
-	var v := vessel
+	# anahtarlar her karede güncel uçağı okur (kurulumda vessel henüz atanmamış olabilir)
 	var pz: float = _L["panel_z"]
 	# panelin alt şeridi: sistemler (soldan sağa)
 	var specs := [
-		["BATARYA", "toggle", func() -> bool: return v.battery_on, func() -> void: v.battery_on = not v.battery_on],
-		["JFS", "button", func() -> bool: return v.jfs_on, func() -> void: v.jfs_on = not v.jfs_on and v.has_power()],
-		["MOTOR ÇALIŞTIR", "button", func() -> bool: return _engine_starting(), func() -> void: v.start_engines()],
-		["YAKIT KES", "guarded", func() -> bool: return not v.engines_running(), func() -> void: v.shutdown_engines()],
-		["SEYİR IŞIKLARI", "toggle", func() -> bool: return v.lights_on, func() -> void: v.lights_on = not v.lights_on],
-		["KOKPİT IŞIĞI", "button", func() -> bool: return v.cockpit_light, func() -> void: v.cockpit_light = not v.cockpit_light],
+		["BATARYA", "toggle", func() -> bool: return vessel.battery_on, func() -> void: vessel.battery_on = not vessel.battery_on],
+		["JFS", "button", func() -> bool: return vessel.jfs_on, func() -> void: vessel.jfs_on = not vessel.jfs_on and vessel.has_power()],
+		["MOTOR ÇALIŞTIR", "button", func() -> bool: return _engine_starting(), func() -> void: vessel.start_engines()],
+		["YAKIT KES", "guarded", func() -> bool: return not vessel.engines_running(), func() -> void: vessel.shutdown_engines()],
+		["SEYİR IŞIKLARI", "toggle", func() -> bool: return vessel.lights_on, func() -> void: vessel.lights_on = not vessel.lights_on],
+		["KOKPİT IŞIĞI", "button", func() -> bool: return vessel.cockpit_light, func() -> void: vessel.cockpit_light = not vessel.cockpit_light],
 	]
 	for i in specs.size():
 		var s: Array = specs[i]
 		_add_switch(s[0], _pp(-0.5 + i * 0.2, -0.15, 0.006), Vector3(75, 0, 0), s[1], s[2], s[3])
 	# orta: iniş takımı kolu panelde, park freni kutuda
 	_add_switch("İNİŞ TAKIMI", _pp(0, -0.075, 0.006), Vector3(75, 0, 0), "gear",
-		func() -> bool: return v.gear_down, func() -> void: v.gear_down = not v.gear_down)
+		func() -> bool: return vessel.gear_down, func() -> void: vessel.gear_down = not vessel.gear_down)
 	_add_switch("PARK FRENİ", Vector3(0.05, 0.545, -0.08), Vector3.ZERO, "handle",
-		func() -> bool: return v.parking_brake, func() -> void: v.parking_brake = not v.parking_brake)
+		func() -> bool: return vessel.parking_brake, func() -> void: vessel.parking_brake = not vessel.parking_brake)
 	# göz siperinin üstü: otomatik uçuş
 	_add_switch("SAS", Vector3(-0.12, 0.885, pz - 0.1), Vector3(20, 0, 0), "toggle",
-		func() -> bool: return v.sas, func() -> void: v.sas = not v.sas)
+		func() -> bool: return vessel.sas, func() -> void: vessel.sas = not vessel.sas)
 	_add_switch("OTOPİLOT", Vector3(0.12, 0.885, pz - 0.1), Vector3(20, 0, 0), "button",
-		func() -> bool: return v.autopilot_active, func() -> void: v.autopilot_toggle.emit())
+		func() -> bool: return vessel.autopilot_active, func() -> void: vessel.autopilot_toggle.emit())
 	# kapı
 	_add_switch("KAPI", Vector3(-0.56, 0.62, -0.1), Vector3(0, 0, 30), "button",
 		func() -> bool: return canopy_open, func() -> void: canopy_open = not canopy_open)
 	_add_switch("DIŞARI ÇIK", Vector3(-0.56, 0.62, 0.15), Vector3(0, 0, 30), "eject",
-		func() -> bool: return not occupied, func() -> void: v.request_eva.emit())
+		func() -> bool: return not occupied, func() -> void: vessel.request_eva.emit())
 
 
 # ------------------------------------------------------------------ ortak
@@ -1092,3 +1159,18 @@ func boarding_points() -> Array:
 	var sill := part.global_transform * Vector3(side * 0.62 * s, 0.6 * s + 0.25, seat.z)
 	var top := _in.to_global(seat + Vector3(0, 0.25, 0))
 	return [sill, top]
+
+
+## Kanopi camında yağmur damlaları: yağmurda yavaşça birikir (~20 sn), hız arttıkça damlalar
+## geriye doğru akıp çizgileşir, yağmur dinince ~1 dakikada kurur. Kanopi açıkken birikmez.
+func _update_rain(delta: float) -> void:
+	if not is_instance_valid(_glass_mi):
+		return
+	var rain: float = float(Weather.current.get("rain", 0.0))
+	var spd := vessel.linear_velocity.length()
+	if rain > 0.05 and not canopy_open:
+		_rain_wet = move_toward(_rain_wet, rain, delta * 0.05)
+	else:
+		_rain_wet = move_toward(_rain_wet, 0.0, delta * (0.015 + spd * 0.0002))
+	_glass_mi.set_instance_shader_parameter("rain", _rain_wet)
+	_glass_mi.set_instance_shader_parameter("streak", clampf(spd / 120.0, 0.0, 1.0))

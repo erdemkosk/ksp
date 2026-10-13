@@ -61,7 +61,11 @@ func max_allowed() -> Array:
 	var agl := v.radar_altitude()
 	var landed := v.linear_velocity.length() < 40.0 and agl < 5.0
 	if landed:
-		return [SAFE_LEVEL, ""]
+		# yerde (taksi, bekleme, motor ısınması): x10'a kadar. x25'te fizik adımı 1/24 sn olur,
+		# iniş takımı yayları sekip uçağı zıplatır; o yüzden yalnız park freni çekili ve dururken.
+		if v.linear_velocity.length() < 0.5 and v.parking_brake:
+			return [LEVELS.size() - 1, ""]
+		return [4, "x25 için: park freni çek, dur"]
 	if agl < 40.0:
 		return [1, "yere çok yakın"]
 	if agl < 600.0 or absf(v.g_force - 1.0) > 0.6:
@@ -83,6 +87,7 @@ func set_level(i: int) -> void:
 	level = i
 	Sfx.click()
 	_apply(LEVELS[level])
+	_redraw_t = 0.0
 
 
 func _apply(k: int) -> void:
@@ -142,7 +147,16 @@ func _process(delta: float) -> void:
 			_blocked_msg = "Zaman normale döndü: %s" % lim[1] if level == 0 else "Sarma x%d: %s" % [LEVELS[level], lim[1]]
 			_msg_t = 3.0
 			Sfx.click()
-	queue_redraw()
+	# çizim saniyede ~8 kez yeter (ya da mesaj / fare üstündeyken her kare)
+	_redraw_t -= delta
+	if _redraw_t <= 0.0 or _msg_t > 0.0 or _hover >= 0:
+		_redraw_t = 0.12
+		_lim_cache = int(max_allowed()[0])
+		queue_redraw()
+
+
+var _redraw_t := 0.0
+var _lim_cache := 0
 
 
 func _draw() -> void:
@@ -156,7 +170,7 @@ func _draw() -> void:
 	var accent := Color(1.0, 0.8, 0.3) if level > 0 else Color(0.6, 0.75, 0.85)
 	draw_string(_font_bold, Vector2(12, 19), "ZAMAN", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.6, 0.72, 0.8))
 	draw_string(_font_bold, Vector2(12, 40), "x%d" % LEVELS[level], HORIZONTAL_ALIGNMENT_LEFT, -1, 17, accent)
-	var lim := int(max_allowed()[0])
+	var lim := _lim_cache
 	for i in LEVELS.size():
 		var sr := _slot_rect(i)
 		var on := i <= level

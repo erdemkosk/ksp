@@ -40,6 +40,7 @@ const KEY_BINDINGS := {
 	"flare": [KEY_O],
 	"chaff": [KEY_SEMICOLON],       # Türkçe klavyede Ş
 	"cm_auto": [KEY_APOSTROPHE],    # Türkçe klavyede İ: karşı tedbir otomatik programı
+	"bombsight": [KEY_BRACKETLEFT], # Türkçe klavyede Ğ: bombacı kamerası
 	"mouse_flight": [KEY_Y],
 	"pause": [KEY_ESCAPE],
 	"cursor_toggle": [KEY_TAB],
@@ -81,16 +82,40 @@ var flight_craft := {}
 var resume := {}
 
 ## Oyuncu ayarları (user://settings.json)
-var settings := {"mouse_aim": false, "mouse_sens": 1.0, "volume": 0.8, "fov": 78.0, "radio": true, "shake": 1.0, "g_limit": true, "sandbox": false, "panel_alpha": 0.6, "fullscreen": true}
+var settings := {"mouse_aim": false, "mouse_sens": 1.0, "volume": 0.8, "fov": 78.0, "radio": true, "shake": 1.0, "g_limit": true, "panel_alpha": 0.6, "fullscreen": true}
 ## Hangar açılınca yapılacak iş: "missions" (görev seçimi), "crew" (kadro) ya da boş
 var hangar_action := ""
 
 ## Seçili görev kimliği (MissionManager.DEFS). Boşsa serbest uçuş.
 var mission := ""
 
+## Oyun modu: "career" (cephe seferi, para, kayıplar) ya da "free" (serbest: her şey açık, para yok)
+var mode := "career"
+## Ana menü açılınca gösterilecek ekran: "home", "career", "free"
+var menu_screen := "home"
+## Serbest uçuşta başlangıç: "runway" (soğuk), "hot" (motor çalışır), "air" (havada)
+var free_start := "runway"
+## Serbest uçuşta seçilen hava (-1: varsayılan/rastgele) ve saat (-1: olduğu gibi)
+var free_weather := -1
+var free_hour := -1.0
+## Test uçuşu: görev simülasyonu: ödül, kayıp, cephe değişimi, XP yok
+var test_flight := false
+## Kariyerde harekâtın yapıldığı cephe bölgesi (Front.REGIONS id)
+var mission_region := ""
+## "Göreve çık" ile seçilen, hangarda hazırlanan harekât (boşsa yok). Hangarda test uçuşu yapılır,
+## "Tamam" ile göreve başlanır; test uçuşundan hangara dönünce hazırlık sürer.
+var pending_op := {}
+## Uçulan görevin isteği (görev kartı: menzil, yük, pist, tehditler…; boşsa yok). Uçuşta okunur.
+var mission_card := {}
+## Son görevin sonucu (tasarım değerlendirmesi için): yakıt, G, süre, vuruşlar, tespit…
+var last_result := {}
+## Görev provası: kartın rotası/saati/havası, düşmansız ve risksiz (test_flight ile birlikte)
+var rehearsal := false
+
 
 func _ready() -> void:
 	_register_inputs()
+	DisplayServer.window_set_title("Gök Cephesi")
 	_parse_args()
 	load_settings()
 	_apply_window()

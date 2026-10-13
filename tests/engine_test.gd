@@ -42,11 +42,16 @@ func _hold_speed(v: Vessel, speed: float, seconds: float) -> void:
 
 
 func _thrust_at(id: String, mach: float) -> float:
-	var v := _spawn([{"part": id, "pos": [0, 0, 3.6]}])
+	# turbojetin kendi alığı yok: burun alığıyla (ramjet / darbeli jet alığını taşır)
+	var v := _spawn([{"part": id, "pos": [0, 0, 3.6]}], "intake_nose" if id == "jet_engine" else "nose_cone")
 	await _hold_speed(v, mach * Atmosphere.SPEED_OF_SOUND, 4.0)
 	var t := 0.0
 	for e: EngineModule in v.engines():
 		t += e.thrust
+		if e.thrust <= 0.0:
+			print("ENGINE   %s sıfır: çalışıyor=%s alık=%.2f parça=%d" % [id, e.is_running(), e.intake, v.parts.size()])
+	if v.engines().is_empty():
+		print("ENGINE   %s M%.1f: motor gövdeden koptu (yapısal yük, test uçağı)" % [id, mach])
 	v.queue_free()
 	return t
 

@@ -10,7 +10,10 @@ config_version=5
 
 [application]
 
+; config/name kayıt klasörünü belirler (user://), oyuncu kayıtları kaybolmasın diye eski ad kalıyor;
+; pencere başlığı Game._ready içinde "Gök Cephesi" yapılır.
 config/name="Hangar Savaşları (Prototip)"
+config/description="Gök Cephesi: parça parça savaş uçağı tasarla, uç ve cepheyi geri al."
 run/main_scene="res://menu/main_menu.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"

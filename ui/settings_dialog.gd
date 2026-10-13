@@ -32,7 +32,6 @@ func _build() -> void:
 	_check(box, "Telsiz konuşmaları (kule, radar)", "radio")
 	_check(box, "G sınırlayıcı (pilotu bayıltacak manevrayı kumanda kısar)", "g_limit")
 	_check(box, "Tam ekran (F11)", "fullscreen")
-	_check(box, "Serbest mod (tüm parçalar ve görevler açık, para yok)", "sandbox")
 	var hint := Label.new()
 	hint.text = "Gamepad: sol çubuk burun/yatış, sağ çubuk sapma/gaz, RT ateş, LT fren, LB flare."
 	hint.add_theme_font_size_override("font_size", 12)

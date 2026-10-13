@@ -70,7 +70,7 @@ static func explosion(pos: Vector3, radius: float, max_damage: float, source: Ob
 			if dv < radius * 1.5:
 				v.apply_central_impulse((v.com_global() - pos).normalized() * max_damage * 20.0 * (1.0 - dv / (radius * 1.5)))
 		elif node is GroundTarget:
-			var d: float = node.global_position.distance_to(pos)
+			var d: float = node.blast_distance(pos) if node is Warship else node.global_position.distance_to(pos)
 			if d < radius:
 				node.take_damage(max_damage * (1.0 - d / radius))
 

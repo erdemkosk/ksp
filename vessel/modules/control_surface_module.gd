@@ -23,6 +23,15 @@ func setup(p: Dictionary) -> void:
 func on_attached() -> void:
 	_visual = part.get_node_or_null("Visual")
 	_compute_weights()
+	# büyük / ağır uçakta yüzeyler (ve hidrolikleri) daha yavaş döner: 12 t avcı 90°/sn,
+	# 45 t yolcu uçağı ~47°/sn — ağır uçak kumandaya geç cevap verir
+	rate = deg_to_rad(90.0) * response_factor(vessel.mass)
+
+
+## Uçağın kütlesine göre kumanda tepkisi çarpanı (1 = hafif avcı; ağır uçakta küçülür).
+## PlayerController da çubuk hareket hızı için kullanır.
+static func response_factor(mass: float) -> float:
+	return clampf(sqrt(12000.0 / maxf(mass, 1.0)), 0.4, 1.0)
 
 
 func physics_tick(delta: float) -> void:

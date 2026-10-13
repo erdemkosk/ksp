@@ -10,7 +10,9 @@ extends Control
 ##   • Tuş ipuçları. Kenardaki sekme ya da M tuşu ile katlanır.
 
 const W := 280.0
-const H := 544.0
+const H0 := 544.0
+const WING_H := 28.0         ## kanat adamı bölümü için ek yükseklik (yapı bölümü de kısalır)
+var H := H0
 const PANEL_BG := Color(0.13, 0.15, 0.15, 0.94)
 const PANEL_EDGE := Color(0.32, 0.35, 0.35)
 const ENGRAVE := Color(0.86, 0.88, 0.84)
@@ -21,7 +23,11 @@ const RED := Color(1.0, 0.28, 0.22)
 const GUARD_RED := Color(0.78, 0.1, 0.08)
 const ENEMY := Color(1.0, 0.35, 0.3)
 const FRIEND := Color(0.4, 0.8, 1.0)
-const WEAPON_NAMES := ["TOP", "FÜZE", "BOMBA", "KARGO", "RADAR", "LGB"]
+const WEAPON_NAMES := {0: "TOP", 1: "FÜZE", 2: "BOMBA", 3: "KARGO", 4: "RADAR", 5: "LGB", 6: "HARM",
+	7: "SEYİR", 8: "GEMİ", 9: "SÜZÜL", 10: "MİSKET", 11: "1000", 12: "BÖLME"}
+## Kartın altındaki tür / güdüm satırı: oyuncu füzenin nasıl kilitlendiğini bilsin.
+const WEAPON_TYPES := {0: "", 1: "ısı · oto kilit", 2: "serbest düşüş", 3: "", 4: "radar · F4", 5: "lazer · pod", 6: "radar avcısı",
+	7: "GPS · harita", 8: "gemi · GPS", 9: "GPS süzülür", 10: "misket", 11: "ağır", 12: "iç bölme"}
 
 var vessel: Vessel
 var camera: FlightCamera
@@ -63,6 +69,7 @@ func _process(delta: float) -> void:
 		collapsed = vessel.available_weapons().is_empty() and vessel.flares_left() == 0
 	_slide = move_toward(_slide, 1.0 if collapsed else 0.0, delta * 5.0)
 	var vp := get_viewport_rect().size
+	H = H0 + (WING_H if _wing() != null else 0.0)
 	size = Vector2(W + 26, H)
 	# sol üstte, başlık satırının altında (sol alt eylem panelinin)
 	position = Vector2(-W * _slide, 64.0)
@@ -136,10 +143,16 @@ func _gui_input(event: InputEvent) -> void:
 				_press["chaff"] = 1.0
 				if not vessel.drop_chaff():
 					Sfx.play_ui("switch_2.ogg", -10.0, 0.6)
+			"k0", "k1", "k2", "k3", "k4":
+				var wf := _wing()
+				if wf:
+					wf.command(WING_ORDERS[int(h.substr(1))])
+					_press[h] = 1.0
+					Sfx.click()
 			"cmauto":
 				vessel.cm_auto = not vessel.cm_auto
 				Sfx.play_ui("switch_4.ogg" if vessel.cm_auto else "switch_2.ogg", -8.0, 1.0)
-			"w0", "w1", "w2", "w3", "w4", "w5":
+			"w0", "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "w10", "w11", "w12":
 				var kind := int(h.substr(1))
 				if kind in vessel.available_weapons():
 					vessel.selected_weapon = kind
@@ -159,8 +172,9 @@ func _radar_click(p: Vector2) -> bool:
 		vessel.radar_on = not vessel.radar_on
 		Sfx.play_ui("switch_4.ogg" if vessel.radar_on else "switch_2.ogg", -8.0, 1.0)
 		return true
-	var origin := Vector2(r.position.x + r.size.x * 0.5, r.end.y - 8)
-	var R := r.size.y - 26.0
+	var g := _scope_geom(r, radar)
+	var origin: Vector2 = g[0]
+	var R: float = g[1]
 	var fr := Planet.local_basis(vessel.global_position)
 	var hdg := deg_to_rad(vessel.heading_deg())
 	var best: Vessel = null
@@ -187,6 +201,10 @@ func _hit(p: Vector2) -> String:
 		return "chaff"
 	if _auto_rect().has_point(p):
 		return "cmauto"
+	if _wing() != null:
+		for i in WING_ORDERS.size():
+			if _wing_btn(i).has_point(p):
+				return "k%d" % i
 	var kinds := _slot_kinds()
 	for k in 4:
 		if _weapon_rect(k).has_point(p):
@@ -198,8 +216,12 @@ func _hit(p: Vector2) -> String:
 ## kalan yuvalar varsayılan türlerle (soluk "yok" kartı) dolar.
 func _slot_kinds() -> Array[int]:
 	var kinds: Array[int] = []
-	for k in vessel.available_weapons():
-		if kinds.size() < 4:
+	var have := vessel.available_weapons()
+	# seçili silah her zaman görünsün (4'ten fazla tür varsa)
+	if vessel.selected_weapon in have:
+		kinds.append(vessel.selected_weapon)
+	for k in have:
+		if kinds.size() < 4 and not k in kinds:
 			kinds.append(k)
 	for k in [Vessel.WEAPON_GUN, Vessel.WEAPON_MISSILE, Vessel.WEAPON_BOMB, Vessel.WEAPON_CARGO]:
 		if kinds.size() < 4 and not k in kinds:
@@ -231,7 +253,11 @@ func _draw() -> void:
 		_draw_weapon(kinds[k], k, powered)
 	_draw_status(Rect2(14, 206, W - 28, 30), powered)
 	_draw_radar(Rect2(14, 242, W - 28, 128), powered)
-	_draw_structure(Rect2(14, 378, W - 28, 140))
+	if _wing() != null:
+		_draw_structure(Rect2(14, 378, W - 28, 96))
+		_draw_wing(Rect2(14, 480, W - 28, 66))
+	else:
+		_draw_structure(Rect2(14, 378, W - 28, 140))
 	_text_c(Vector2(W * 0.5, H - 14), "Space ateş  ·  V silah  ·  O flare  ·  F4 hedef", 11, DIM, _font)
 
 
@@ -300,40 +326,27 @@ func _draw_weapon(kind: int, slot: int, powered: bool) -> void:
 	var edge := LIT_GREEN if sel else Color(1, 1, 1, 0.08 if not hov else 0.25)
 	draw_style_box(_box(Color(0.05, 0.12, 0.08, 0.9) if sel else Color(0, 0, 0, 0.25 if not hov else 0.45), 6, edge), r.grow(-_press.get("w%d" % kind, 0.0) * 2.0))
 	var col := (LIT_GREEN if sel else ENGRAVE) if have else Color(0.35, 0.38, 0.38)
-	_text_c(r.position + Vector2(r.size.x * 0.5, 22), WEAPON_NAMES[kind], 12, col, _bold)
-	var count := 0
-	var full := 1
+	_text_c(r.position + Vector2(r.size.x * 0.5, 18), String(WEAPON_NAMES.get(kind, "?")), 12, col, _bold)
+	var sub := String(WEAPON_TYPES.get(kind, ""))
+	if sub != "":
+		_text_c(r.position + Vector2(r.size.x * 0.5, 30), sub, 9, Color(col, 0.75))
+	var count := vessel.ammo_of(kind)
+	var full := maxi(vessel.ammo_capacity(kind), 1)
 	match kind:
 		Vessel.WEAPON_GUN:
-			count = vessel.gun_ammo()
 			full = 0
 			for m in vessel.modules:
 				if m is GunModule:
 					full += 500
-		Vessel.WEAPON_MISSILE, Vessel.WEAPON_RADAR:
-			var rg := kind == Vessel.WEAPON_RADAR
-			count = vessel.missiles_left(rg)
-			for m in vessel.modules:
-				if m is MissileModule and m.radar_guided == rg:
-					full += 1
-			full = maxi(full - 1, 1)
-		Vessel.WEAPON_BOMB, Vessel.WEAPON_LGB:
-			var gd := kind == Vessel.WEAPON_LGB
-			count = vessel.bombs_left(gd)
-			for m in vessel.modules:
-				if m is BombModule and m.guided == gd:
-					full += 1
-			full = maxi(full - 1, 1)
 		Vessel.WEAPON_CARGO:
-			count = vessel.cargo_left()
 			full = 0
 			for m in vessel.modules:
 				if m is CargoModule:
 					full += 4
 	if not have:
-		_text_c(r.position + Vector2(r.size.x * 0.5, 46), "yok", 12, Color(0.35, 0.38, 0.38))
+		_text_c(r.position + Vector2(r.size.x * 0.5, 50), "yok", 12, Color(0.35, 0.38, 0.38))
 		return
-	_text_c(r.position + Vector2(r.size.x * 0.5, 46), str(count), 18, Color.WHITE if count > 0 else RED, _bold)
+	_text_c(r.position + Vector2(r.size.x * 0.5, 50), str(count), 17, Color.WHITE if count > 0 else RED, _bold)
 	var bar := Rect2(r.position + Vector2(10, r.size.y - 14), Vector2(r.size.x - 20, 5))
 	draw_rect(bar, Color(1, 1, 1, 0.08))
 	var f := clampf(float(count) / float(maxi(full, 1)), 0.0, 1.0)
@@ -363,10 +376,10 @@ func _draw_status(r: Rect2, powered: bool) -> void:
 					text = "FÜZE KALMADI"
 					col = RED
 				elif t:
-					text = "KİLİT  %s  %.1f km" % [t.craft_name, t.com_global().distance_to(vessel.com_global()) / 1000.0]
+					text = "ISI KİLİDİ ✓  %s  %.1f km — Space" % [t.craft_name, t.com_global().distance_to(vessel.com_global()) / 1000.0]
 					col = Color(1, 0.95, 0.4)
 				else:
-					text = "ARAYICI — burnu hedefe çevir"
+					text = "ISI ARIYOR — ısı kaynağını burnun önüne al (≤%d km)" % int(MissileModule.SEEK_RANGE / 1000.0)
 					col = LIT_GREEN
 			Vessel.WEAPON_RADAR:
 				var rt: Vessel = combat.locked_target() if combat else null
@@ -374,10 +387,10 @@ func _draw_status(r: Rect2, powered: bool) -> void:
 					text = "RADAR FÜZESİ KALMADI"
 					col = RED
 				elif rt:
-					text = "RADAR İZİ  %s  %.1f km" % [rt.craft_name, rt.com_global().distance_to(vessel.com_global()) / 1000.0]
+					text = "RADAR KİLİDİ ✓  %s  %.1f km — Space" % [rt.craft_name, rt.com_global().distance_to(vessel.com_global()) / 1000.0]
 					col = Color(1, 0.95, 0.4)
 				else:
-					text = "İZ YOK — F4 ile hedef seç (1-16 km)"
+					text = "İZ YOK — F4 ya da radar ekranında temasa tıkla (1-16 km)"
 					col = LIT_AMBER
 			Vessel.WEAPON_LGB:
 				var pod := vessel.targeting_pod()
@@ -399,11 +412,62 @@ func _draw_status(r: Rect2, powered: bool) -> void:
 			Vessel.WEAPON_CARGO:
 				text = "KARGO — işarete göre bırak (%d)" % vessel.cargo_left()
 				col = LIT_GREEN if vessel.cargo_left() > 0 else RED
+			Vessel.WEAPON_ARM, Vessel.WEAPON_SHIP:
+				var an: Node3D = null
+				for m in vessel.modules:
+					if m is MissileModule and m.loaded and m.weapon_kind() == vessel.selected_weapon and is_instance_valid(m.aim_node):
+						an = m.aim_node
+				if vessel.ammo_of(vessel.selected_weapon) == 0:
+					text = "FÜZE KALMADI"
+					col = RED
+				elif an:
+					var nm := String(an.get("unit_name")) if an.get("unit_name") != null else String(an.get("craft_name"))
+					text = "KİLİT  %s  %.0f km" % [nm, an.global_position.distance_to(vessel.com_global()) / 1000.0]
+					col = Color(1, 0.95, 0.4)
+				elif vessel.selected_weapon == Vessel.WEAPON_ARM:
+					text = "YAYIN YOK — burnu radara çevir"
+					col = LIT_AMBER
+				else:
+					text = "GEMİ YOK — GPS'e ya da ileri atılır"
+					col = LIT_AMBER
+			Vessel.WEAPON_CRUISE, Vessel.WEAPON_GLIDE:
+				if vessel.ammo_of(vessel.selected_weapon) == 0:
+					text = "KALMADI"
+					col = RED
+				elif vessel.strike_xz == Vector2.INF:
+					text = "GPS HEDEF YOK — haritada (M) sol tık"
+					col = LIT_AMBER
+				else:
+					text = "GPS HEDEF  %.1f km — bırak" % (vessel.strike_world().distance_to(vessel.com_global()) / 1000.0)
+					col = Color(1, 0.95, 0.4)
+			Vessel.WEAPON_CLUSTER, Vessel.WEAPON_HEAVY:
+				var n := vessel.ammo_of(vessel.selected_weapon)
+				text = "%s — CCIP'e göre bırak (%d)" % [vessel.weapon_name(), n] if n > 0 else "KALMADI"
+				col = LIT_GREEN if n > 0 else RED
+			Vessel.WEAPON_BAY:
+				var bay: BombBayModule = null
+				for m in vessel.modules:
+					if m is BombBayModule:
+						bay = m
+				var nb := vessel.ammo_of(Vessel.WEAPON_BAY)
+				if nb == 0:
+					text = "BÖLME BOŞ"
+					col = RED
+				elif bay and bay.doors > 0.98:
+					text = "KAPAKLAR AÇIK — basılı tut: seri bırak (%d)" % nb
+					col = Color(1, 0.95, 0.4)
+				else:
+					text = "BÖLME (%d) — Space: kapakları aç" % nb
+					col = LIT_GREEN
 	var inc := vessel.incoming_missile()
 	if inc and fmod(_sweep, 0.5) < 0.3:
 		text = "!! RADAR FÜZESİ — CHAFF (Ş), DİK DÖN !!" if inc.is_radar() else "!! IR FÜZE — FLARE AT (O) !!"
 		col = RED
-	_text_c(r.get_center() + Vector2(0, 5), text, 13, col, _bold)
+	# uzun mesaj kutuya sığsın: yazı küçülür
+	var fs := 13
+	while fs > 9 and _bold.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > r.size.x - 10:
+		fs -= 1
+	_text_c(r.get_center() + Vector2(0, 5), text, fs, col, _bold)
 
 
 func _draw_radar(r: Rect2, powered: bool) -> void:
@@ -423,22 +487,33 @@ func _draw_radar(r: Rect2, powered: bool) -> void:
 	# IRST temasları (pasif): turuncu daire
 	var ir := vessel.irst()
 	if ir:
-		var o := Vector2(r.position.x + r.size.x * 0.5, r.end.y - 8)
+		var gi := _scope_geom(r, radar)
+		var o: Vector2 = gi[0]
 		for t in ir.contacts:
 			if is_instance_valid(t):
-				var ip := _scope_point(t.com_global(), o, r.size.y - 26.0, radar.range_m, Planet.local_basis(vessel.global_position), deg_to_rad(vessel.heading_deg()))
+				var ip := _scope_point(t.com_global(), o, float(gi[1]), radar.range_m, Planet.local_basis(vessel.global_position), deg_to_rad(vessel.heading_deg()))
 				draw_arc(ip, 6.0, 0.0, TAU, 12, Color(1.0, 0.6, 0.2), 1.5)
 	if not vessel.radar_on:
 		_text_c(r.get_center() + Vector2(0, 5), "RADAR KAPALI — üst şeride tıkla", 12, LIT_AMBER, _bold)
 		return
-	var origin := Vector2(r.position.x + r.size.x * 0.5, r.end.y - 8)
-	var R := r.size.y - 26.0
+	var g := _scope_geom(r, radar)
+	var origin: Vector2 = g[0]
+	var R: float = g[1]
 	var cone := radar.cone
-	for k in [0.33, 0.66, 1.0]:
-		draw_arc(origin, R * k, -PI * 0.5 - cone, -PI * 0.5 + cone, 24, Color(green, 0.22), 1.0, true)
-	for a in [-cone, 0.0, cone]:
-		draw_line(origin, origin + Vector2(sin(a), -cos(a)) * R, Color(green, 0.16), 1.0)
-	var sw := sin(_sweep * 1.6) * cone
+	var sw := 0.0
+	if g[2]:
+		# 360° radar (AWACS): uçak ortada, tam daire, dönen tarama çizgisi
+		for k in [0.33, 0.66, 1.0]:
+			draw_arc(origin, R * k, 0.0, TAU, 48, Color(green, 0.22), 1.0, true)
+		for a in [0.0, PI * 0.5, PI, PI * 1.5]:
+			draw_line(origin, origin + Vector2(sin(a), -cos(a)) * R, Color(green, 0.12), 1.0)
+		sw = fmod(_sweep * 1.2, TAU)
+	else:
+		for k in [0.33, 0.66, 1.0]:
+			draw_arc(origin, R * k, -PI * 0.5 - cone, -PI * 0.5 + cone, 24, Color(green, 0.22), 1.0, true)
+		for a in [-cone, 0.0, cone]:
+			draw_line(origin, origin + Vector2(sin(a), -cos(a)) * R, Color(green, 0.16), 1.0)
+		sw = sin(_sweep * 1.6) * cone
 	draw_line(origin, origin + Vector2(sin(sw), -cos(sw)) * R, Color(green, 0.45), 1.5, true)
 	var fr := Planet.local_basis(vessel.global_position)
 	var hdg := deg_to_rad(vessel.heading_deg())
@@ -461,6 +536,13 @@ func _draw_radar(r: Rect2, powered: bool) -> void:
 			draw_line(p - Vector2(5, -5), p + Vector2(5, -5), ENEMY, 2.0)
 	draw_circle(origin, 3.0, green)
 
+
+## Radar ekranı geometrisi: [merkez, yarıçap, tam_daire]. 360° radarda uçak ortada, yoksa altta.
+func _scope_geom(r: Rect2, radar: RadarModule) -> Array:
+	if radar.cone >= PI * 0.95:
+		var R := minf(r.size.x, r.size.y - 22.0) * 0.5 - 4.0
+		return [Vector2(r.position.x + r.size.x * 0.5, r.position.y + 22.0 + (r.size.y - 22.0) * 0.5), R, true]
+	return [Vector2(r.position.x + r.size.x * 0.5, r.end.y - 8), r.size.y - 26.0, false]
 
 func _scope_point(world: Vector3, origin: Vector2, R: float, rng: float, fr: Basis, hdg: float) -> Vector2:
 	var to := world - vessel.com_global()
@@ -554,3 +636,36 @@ func _text_c(pos: Vector2, text: String, font_size: int, col: Color, font: Font 
 	var f := font if font else _font
 	var w := f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
 	draw_string(f, pos - Vector2(w * 0.5, 0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, col)
+
+
+# ------------------------------------------------------------------ kanat adamı
+
+## Butonların sırası: saldır, koru, yanıma çağır (kol), serbest, üsse.
+const WING_ORDERS := [Wingman.Order.ATTACK, Wingman.Order.COVER, Wingman.Order.FORM, Wingman.Order.FREE, Wingman.Order.RTB]
+const WING_LABELS := ["SALDIR", "KORU", "ÇAĞIR", "SERBEST", "ÜSSE"]
+
+
+func _wing() -> WingFlight:
+	var wf := WingFlight.active
+	return wf if is_instance_valid(wf) and wf.flying() else null
+
+
+func _wing_btn(i: int) -> Rect2:
+	var bw := (W - 28 - 4 * 4) / 5.0
+	return Rect2(14 + i * (bw + 4), 480 + 26, bw, 32)
+
+
+func _draw_wing(r: Rect2) -> void:
+	var wf := _wing()
+	draw_style_box(_box(Color(0.02, 0.05, 0.06), 5, Color(0.3, 0.33, 0.33)), r)
+	var dist := wf.ship.com_global().distance_to(vessel.com_global()) / 1000.0
+	var order: int = wf.ai.order if is_instance_valid(wf.ai) else -1
+	draw_string(_bold, r.position + Vector2(8, 16), "KANAT 2", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, FRIEND)
+	var info := "%s  ·  %.1f km  ·  yakıt %%%d" % [wf.pilot_name, dist, 100.0 * wf.ship.fuel_amount() / maxf(wf.ship.fuel_capacity(), 1.0)]
+	draw_string(_font, r.position + Vector2(64, 16), info, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 70, 10, DIM)
+	for i in WING_ORDERS.size():
+		var b := _wing_btn(i).grow(-_press.get("k%d" % i, 0.0) * 2.0)
+		var on: bool = WING_ORDERS[i] == order
+		var hov := _hover == "k%d" % i
+		draw_style_box(_box(Color(0.05, 0.14, 0.2, 0.95) if on else Color(0, 0, 0, 0.3 if not hov else 0.5), 5, FRIEND if on else Color(1, 1, 1, 0.1 if not hov else 0.3)), b)
+		_text_c(b.get_center() + Vector2(0, 4), WING_LABELS[i], 10, FRIEND if on else ENGRAVE, _bold)

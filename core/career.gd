@@ -23,6 +23,20 @@ var unlocked := {}            ## parça id -> true
 var completed := {}           ## görev id -> kaç kez
 var total_earned := 0
 var flights := 0
+## Cephe seferi (Front): bölge → sahip, sefer günü, karargâh mesajları
+var front := {}
+var day := 1
+var news := []
+## Düşmanın haber verilmiş hamleleri (FrontAI): [{id, kind, region, from, days, mission, day}]
+var threats := []
+## Son görevin cephe sonuçları (uçuş raporuna yazılır)
+var front_lines := PackedStringArray()
+## Tasarımlar: prototip güvenilirliği, hizmet kayıtları, seri üretim (bkz. Designs)
+var designs_data := {}
+## Üç perdelik hikâye: perde, hedef sayaçları, as karşılaşmaları (bkz. Campaign)
+var campaign := {}
+## Düşman doktrini: oyuncunun alışkanlıkları (bkz. Doctrine)
+var doctrine := {}
 
 
 func _ready() -> void:
@@ -30,13 +44,12 @@ func _ready() -> void:
 	if unlocked.is_empty():
 		for id in STARTER_PARTS:
 			unlocked[id] = true
-	# şimdilik bütün parçalar açık (Ar-Ge kilidi yok)
-	for id in PartLibrary.ids():
-		unlocked[id] = true
+	if front.is_empty():
+		Front.new_campaign()
 
 
 func sandbox() -> bool:
-	return bool(Game.settings.get("sandbox", false))
+	return Game.mode == "free"
 
 
 func is_unlocked(id: String) -> bool:
@@ -49,7 +62,7 @@ func unlock_price(id: String) -> int:
 
 
 func can_unlock(id: String) -> bool:
-	return not is_unlocked(id) and money >= unlock_price(id)
+	return not is_unlocked(id) and money >= unlock_price(id) and Campaign.part_allowed(id)
 
 
 func unlock(id: String) -> bool:
@@ -57,6 +70,7 @@ func unlock(id: String) -> bool:
 		return false
 	money -= unlock_price(id)
 	unlocked[id] = true
+	Designs.on_research(id)   # yeni parça prototip olarak başlar
 	save()
 	changed.emit()
 	return true
@@ -79,31 +93,54 @@ static func mission_reward(level: int) -> int:
 
 ## Görev bitti: ödülü öde, kaydı tut. Döndürür: kazanılan para.
 func mission_finished(id: String, level: int, success: bool) -> int:
-	if sandbox():
+	front_lines = PackedStringArray()
+	if sandbox() or Game.test_flight:
 		return 0
 	var gain := 0
 	if success:
-		var first := int(completed.get(id, 0)) == 0
-		gain = mission_reward(level) if first else mission_reward(level) / 2
-		completed[id] = int(completed.get(id, 0)) + 1
+		if id == "gen":
+			# üretilmiş görev: kartın ödülü; şablon başına sayılır (görev kilitleri için)
+			gain = int(Game.mission_card.get("reward", mission_reward(level)))
+			var key := "gen_" + String(Game.mission_card.get("template", ""))
+			completed[key] = int(completed.get(key, 0)) + 1
+		else:
+			var first := int(completed.get(id, 0)) == 0
+			gain = mission_reward(level) if first else mission_reward(level) / 2
+			completed[id] = int(completed.get(id, 0)) + 1
 	else:
 		gain = 500 * level   # katılım payı
 	money += gain
 	total_earned += gain
+	if Game.mission_region != "" or id in Front.COMBAT:
+		var rid := Game.mission_region
+		if rid == "" and not Front.regions_for(id).is_empty():
+			rid = Front.regions_for(id)[0]
+		front_lines = Front.mission_result(id, rid, success)
 	save()
 	changed.emit()
 	return gain
 
 
-## Uçak kaybedildi: parça bedelinin yarısı (sigorta payı).
+## Uçak kaybedildi: parça bedelinin tamamı kasadan çıkar (test uçuşunda kayıp yok).
 func aircraft_lost(craft_cost: int) -> int:
-	if sandbox():
+	if sandbox() or Game.test_flight:
 		return 0
-	var loss := mini(craft_cost / 2, money)
+	var loss := mini(craft_cost, money)
 	money -= loss
 	save()
 	changed.emit()
 	return loss
+
+
+## Pilot kaybı: ailesine tazminat. Döndürür: ödenen.
+func pilot_lost() -> int:
+	if sandbox() or Game.test_flight:
+		return 0
+	var c := mini(Front.PILOT_LOSS_COST, money)
+	money -= c
+	save()
+	changed.emit()
+	return c
 
 
 static func craft_cost(craft: Dictionary) -> int:
@@ -135,7 +172,8 @@ func save() -> void:
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify({"money": money, "unlocked": unlocked.keys(), "completed": completed,
-			"total_earned": total_earned, "flights": flights}, "\t"))
+			"total_earned": total_earned, "flights": flights,
+			"front": front, "day": day, "news": news, "threats": threats, "designs": designs_data, "campaign": campaign, "doctrine": doctrine},"\t"))
 
 
 func _load() -> void:
@@ -154,6 +192,26 @@ func _load() -> void:
 		completed[String(k)] = int(d["completed"][k])
 	total_earned = int(d.get("total_earned", 0))
 	flights = int(d.get("flights", 0))
+	if typeof(d.get("designs")) == TYPE_DICTIONARY:
+		designs_data = d["designs"]
+	if typeof(d.get("doctrine")) == TYPE_DICTIONARY:
+		doctrine = d["doctrine"]
+	if d.has("front"):
+		for k in d["front"]:
+			front[String(k)] = int(d["front"][k])
+		day = int(d.get("day", 1))
+		news = d.get("news", [])
+		threats = d.get("threats", [])
+		# perde durumu yoksa (eski kayıt) Campaign.st() cepheden çıkarır
+		if typeof(d.get("campaign")) == TYPE_DICTIONARY:
+			campaign = d["campaign"]
+	else:
+		# eski kayıt (cephe öncesi): Ar-Ge kilidi yoktu, her şey açılmıştı. Sefer baştan.
+		money = START_MONEY
+		completed.clear()
+		unlocked.clear()
+		for id in STARTER_PARTS:
+			unlocked[id] = true
 
 
 func reset() -> void:
@@ -163,5 +221,9 @@ func reset() -> void:
 		unlocked[id] = true
 	completed.clear()
 	total_earned = 0
+	designs_data = {}
+	doctrine = {}
+	flights = 0
+	Front.new_campaign()
 	save()
 	changed.emit()

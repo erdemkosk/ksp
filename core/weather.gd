@@ -54,6 +54,45 @@ var _gust_target := Vector3.ZERO
 var _gust_timer := 0.0
 var _turb_noise := FastNoiseLite.new()
 var _time := 0.0
+## Kariyerde hava zamanla kendiliğinden değişir (serbest uçuşta seçilen hava sabit kalır).
+var dynamic := false
+var blend_rate := BLEND_RATE
+var _next_change := 0.0
+## Hangi havadan hangisine geçilebilir (ağırlıklı): ani sıçrama yok, Açık → Fırtına olmaz.
+const TRANSITIONS := {
+	Preset.CLEAR: [[Preset.CLEAR, 2], [Preset.SCATTERED, 3]],
+	Preset.SCATTERED: [[Preset.CLEAR, 2], [Preset.SCATTERED, 2], [Preset.OVERCAST, 2]],
+	Preset.OVERCAST: [[Preset.SCATTERED, 3], [Preset.OVERCAST, 1], [Preset.STORM, 2], [Preset.FOG, 1]],
+	Preset.STORM: [[Preset.OVERCAST, 3], [Preset.STORM, 1]],
+	Preset.FOG: [[Preset.SCATTERED, 2], [Preset.OVERCAST, 2]],
+}
+
+
+## Uçuş başında çağrılır: dinamik havayı aç/kapat, ilk değişimi 3-6 dk sonraya kur.
+func set_dynamic(on: bool) -> void:
+	dynamic = on
+	blend_rate = BLEND_RATE
+	_next_change = randf_range(180.0, 360.0)
+
+
+func _dynamic_step(delta: float) -> void:
+	_next_change -= delta
+	if _next_change > 0.0:
+		return
+	_next_change = randf_range(240.0, 480.0)
+	var opts: Array = TRANSITIONS[preset]
+	var total := 0.0
+	for o in opts:
+		total += float(o[1])
+	var r := randf() * total
+	for o in opts:
+		r -= float(o[1])
+		if r <= 0.0:
+			if int(o[0]) != preset:
+				blend_rate = 0.012       # yavaş geçiş: ~2-3 dakikada yeni havaya döner
+				preset = int(o[0]) as Preset
+				changed.emit()
+			return
 
 
 func _ready() -> void:
@@ -76,6 +115,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func set_preset(p: int, instant := false) -> void:
+	blend_rate = BLEND_RATE
 	preset = p as Preset
 	if instant:
 		current = PRESETS[preset].duplicate()
@@ -131,7 +171,9 @@ func is_blending() -> bool:
 func _process(delta: float) -> void:
 	_time += delta
 	clock = fposmod(clock + delta * time_scale() * 24.0 / DAY_LENGTH, 24.0)
-	var k := 1.0 - exp(-BLEND_RATE * delta)
+	if dynamic:
+		_dynamic_step(delta)
+	var k := 1.0 - exp(-blend_rate * delta)
 	var target: Dictionary = PRESETS[preset]
 	for key in target:
 		if key != "name":

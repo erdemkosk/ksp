@@ -17,6 +17,7 @@ func setup(p: Dictionary) -> void:
 
 
 func physics_tick(delta: float) -> void:
+	_spin_dome(delta)
 	_scan_timer -= delta
 	if _scan_timer > 0.0:
 		return
@@ -34,3 +35,22 @@ func physics_tick(delta: float) -> void:
 				contacts.append(node)
 				if vessel.team != "oyuncu":
 					Detection.report(vessel.team, node)
+
+
+## Dönen radar diski (AWACS "Dome"): yalnız radar yayındayken ve güç varken döner (~10 sn'de
+## bir tur); kapatınca yavaşça durur.
+var _dome: Node3D
+var _dome_rate := 0.0
+
+func _spin_dome(delta: float) -> void:
+	if has_meta("no_dome"):
+		return
+	if _dome == null:
+		_dome = part.find_child("Dome", true, false) as Node3D
+		if _dome == null:
+			set_meta("no_dome", true)
+			return
+	var on := vessel.has_power() and vessel.radar_on
+	_dome_rate = move_toward(_dome_rate, 0.63 if on else 0.0, delta * 0.25)
+	if _dome_rate > 0.0:
+		_dome.rotate_y(_dome_rate * delta)
