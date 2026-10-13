@@ -25,7 +25,7 @@ var _bold: SystemFont
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(W, 470)
+	custom_minimum_size = Vector2(W, 522)
 	mouse_filter = Control.MOUSE_FILTER_PASS
 	_font = ThemeDB.fallback_font
 	_bold = SystemFont.new()
@@ -34,7 +34,7 @@ func _ready() -> void:
 
 
 ## d: {empty, v0_kmh, mach, climb, range_km, tw, wing_load, intake, dto, guns, missiles, bombs,
-##     hp, mass, com_z, col_z, dry_z, z_min, z_max, has_col}
+##     hp, mass, com_z, col_z, dry_z, z_min, z_max, has_col, vne_kmh, g_break, vne_part, g_part}
 func set_data(d: Dictionary) -> void:
 	if not _scores.is_empty() and _scores.max() > 0.0:
 		_prev = _scores.duplicate()
@@ -72,6 +72,7 @@ func _draw() -> void:
 	_draw_balance(Rect2(0, 236, W, 72))
 	_draw_gauges(Rect2(0, 318, W, 92))
 	_draw_runway(Rect2(0, 420, W, 46))
+	_draw_structure(Rect2(0, 472, W, 48))
 
 
 func _text(pos: Vector2, s: String, size: int, col: Color, bold := false, align := HORIZONTAL_ALIGNMENT_LEFT, width := -1.0) -> void:
@@ -220,3 +221,33 @@ func _draw_runway(r: Rect2) -> void:
 	if can and frac > 1.0:
 		label += "  — pist yetmez"
 	_text(r.position + Vector2(0, 10), label, 13, col, true, HORIZONTAL_ALIGNMENT_RIGHT, w)
+
+
+# ------------------------------------------------------------------ yapı sınırı
+
+## Uçak nerede kopar: deniz seviyesinde düz uçuş hızı ve G sınırı, ilk giden parça (StructLimits).
+## Hız şeridi ölçeği 0…2000 km/sa; şerit üstünde azami hız (v0) beyaz çentik — kopma hızı
+## azami hızın altındaysa kırmızı: tam gazda uçak kendini parçalar.
+func _draw_structure(r: Rect2) -> void:
+	var vne: float = _d.get("vne_kmh", 0.0)
+	var gb: float = _d.get("g_break", 0.0)
+	var v0: float = _d.get("v0_kmh", 0.0)
+	_text(r.position + Vector2(0, 10), "YAPI SINIRI", 13, DIM, true)
+	var danger := vne > 0.0 and v0 > vne
+	var col := BAD if danger else (WARN if vne > 0.0 and v0 > vne * 0.85 else GOOD)
+	var right := ("%d km/sa · %.1f G" % [vne, gb]) if vne > 0.0 else ("> 2000 km/sa · %.1f G" % gb)
+	_text(r.position + Vector2(0, 10), right, 13, col, true, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x)
+	var y := r.position.y + 20.0
+	var w := r.size.x
+	draw_rect(Rect2(r.position.x, y, w, 8), Color(0.18, 0.19, 0.2))
+	var lim := (vne if vne > 0.0 else 2000.0) / 2000.0
+	draw_rect(Rect2(r.position.x, y, w * minf(lim, 1.0), 8), Color(GOOD, 0.45))
+	if lim < 1.0:
+		draw_rect(Rect2(r.position.x + w * lim, y, w * (1.0 - lim), 8), Color(BAD, 0.55))
+	if v0 > 0.0:
+		var x := r.position.x + w * clampf(v0 / 2000.0, 0.0, 1.0)
+		draw_line(Vector2(x, y - 3), Vector2(x, y + 11), Color.WHITE, 2.0)
+	var part: String = _d.get("vne_part", "") if vne > 0.0 else _d.get("g_part", "")
+	if part != "":
+		var msg := ("TAM GAZDA KOPAR — ilk: %s" if danger else "ilk kopan: %s") % part
+		_text(Vector2(r.position.x, y + 24), msg, 12, BAD if danger else DIM, danger, HORIZONTAL_ALIGNMENT_LEFT, w)

@@ -52,6 +52,32 @@ func _ready() -> void:
 	await _shot(dir + "/3_vapor.png")
 	var fxn: AeroFx = v.get_node_or_null("AeroFx")
 	print("FX Mach: %.2f  koni görünür=%s  yoğunluk=%s  ölçek=%s" % [v.mach(), fxn._cone.visible, fxn._cone_mat.get_shader_parameter("intensity"), fxn._cone.scale])
+	# 6: yapı zorlanması — kopma hızının %97'sine kademeli (StressFx rengi, kanat bükülmesi, KOPAR çizgisi)
+	var lim := StructLimits.estimate(v, v.air_density())
+	print("FX yapı sınırı (bu irtifa): %d km/sa, %.1f G, ilk: %s" % [float(lim["vne"]) * 3.6, lim["g"], lim["vne_part"]])
+	if float(lim["vne"]) > 0.0:
+		var tw2 := create_tween()
+		# çok hızlıda kovalama kamerası geride kalıyor: makul hızda tut, yükü dayanımı düşürerek getir
+		tw2.tween_property(self, "_hold_speed", minf(float(lim["vne"]) * 0.9, 280.0), 4.0)
+		cam.orbit_yaw = deg_to_rad(140.0)
+		cam.orbit_elevation = deg_to_rad(18.0)
+		cam.distance = 16.0
+		await get_tree().create_timer(4.2).timeout
+		# bu hızda yük ~%40: rengi görmek için dayanımı kademeli düşür (yalnız bu test), yük %85'e
+		# varınca dur (zorlanmış hız titreşimli: bir anda düşürünce uçak parçalanıyordu)
+		for i in 70:
+			if v.max_stress > 0.85 or v.parts.is_empty():
+				break
+			for p in v.parts:
+				p.strength *= 0.93
+			await get_tree().create_timer(0.1).timeout
+		await get_tree().create_timer(0.3).timeout
+		await _shot(dir + "/6_stress.png")
+		var worst: Part = null
+		for p in v.parts:
+			if worst == null or p.stress > worst.stress:
+				worst = p
+		print("FX zorlanma: hız %d km/sa  en yüksek yük %%%d (%s)" % [v.airspeed() * 3.6, v.max_stress * 100.0, worst.title if worst else "-"])
 	_hold_speed = 0.0
 	get_tree().quit()
 

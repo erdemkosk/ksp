@@ -115,6 +115,82 @@ static func splash(pos: Vector3, size: float) -> void:
 	play_at("splash.ogg", pos, linear_to_db(clampf(size, 0.4, 3.5) / 2.0) + 4.0, randf_range(0.75, 1.1), 2500.0)
 
 
+static var _creaks: Array[AudioStreamWAV] = []
+static var _crack: AudioStreamWAV
+
+
+## Yük altında metal gıcırtısı: sürtünme-kayma ("stick-slip") darbeleri, gövdenin iki rezonansını
+## (alçak inilti + metalik tını) uyarır; darbe sıklığı yavaşça kayar. Üç çeşit (tekrar duyulmasın).
+static func creak_stream(i: int) -> AudioStreamWAV:
+	while _creaks.size() < 3:
+		var k := _creaks.size()
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 7100 + k * 31
+		var rate := 22050
+		var dur := 0.55 + 0.2 * k
+		var n := int(rate * dur)
+		var data := PackedByteArray()
+		data.resize(n * 2)
+		var res := [[190.0 + 40.0 * k, 0.9965, 1.0], [520.0 + 90.0 * k, 0.9975, 0.55], [1350.0, 0.996, 0.18]]
+		var st: Array[Vector2] = [Vector2.ZERO, Vector2.ZERO, Vector2.ZERO]   # rezonatör durumları (y1, y2)
+		var phase := 0.0
+		var f0 := rng.randf_range(28.0, 45.0)
+		var f1 := rng.randf_range(60.0, 110.0)
+		for j in n:
+			var t := float(j) / rate
+			var u := t / dur
+			var env := sin(PI * u) * (0.6 + 0.4 * sin(u * 17.0 + k))
+			phase += lerpf(f0, f1, u) * (1.0 + rng.randf_range(-0.25, 0.25)) / rate
+			var x := 0.0
+			if phase >= 1.0:
+				phase -= 1.0
+				x = env * rng.randf_range(0.6, 1.0)
+			var s := 0.0
+			for r in 3:
+				var w: float = TAU * float(res[r][0]) / rate
+				var R: float = res[r][1]
+				var y := 2.0 * R * cos(w) * st[r].x - R * R * st[r].y + x
+				st[r] = Vector2(y, st[r].x)
+				s += y * float(res[r][2])
+			data.encode_s16(j * 2, clampi(int(clampf(s * 0.05, -1.0, 1.0) * 30000.0), -32768, 32767))
+		var w2 := AudioStreamWAV.new()
+		w2.format = AudioStreamWAV.FORMAT_16_BITS
+		w2.mix_rate = rate
+		w2.data = data
+		_creaks.append(w2)
+	return _creaks[i % 3]
+
+
+## Perçin / kiriş çatlaması: sert tık + kısa gürültü patlaması + çınlayan iki yüksek rezonans.
+static func crack_stream() -> AudioStreamWAV:
+	if _crack:
+		return _crack
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4242
+	var rate := 22050
+	var n := int(rate * 0.3)
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	var res := [[1250.0, 0.9985, 1.0], [2900.0, 0.998, 0.6], [430.0, 0.997, 0.8]]
+	var st: Array[Vector2] = [Vector2.ZERO, Vector2.ZERO, Vector2.ZERO]
+	for j in n:
+		var t := float(j) / rate
+		var x := (1.0 if j == 0 else 0.0) + rng.randf_range(-1.0, 1.0) * exp(-t / 0.004) * 0.8
+		var s := x * 0.5
+		for r in 3:
+			var w: float = TAU * float(res[r][0]) / rate
+			var R: float = res[r][1]
+			var y := 2.0 * R * cos(w) * st[r].x - R * R * st[r].y + x
+			st[r] = Vector2(y, st[r].x)
+			s += y * float(res[r][2]) * 0.08
+		data.encode_s16(j * 2, clampi(int(clampf(s, -1.0, 1.0) * 30000.0), -32768, 32767))
+	_crack = AudioStreamWAV.new()
+	_crack.format = AudioStreamWAV.FORMAT_16_BITS
+	_crack.mix_rate = rate
+	_crack.data = data
+	return _crack
+
+
 static var _boom: AudioStreamWAV
 
 

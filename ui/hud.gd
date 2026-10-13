@@ -310,6 +310,15 @@ func _speed_tape(center: Vector2, height: float, col: Color) -> void:
 		_line(Vector2(center.x - (12.0 if major else 6.0), y), Vector2(center.x, y), col, 1.5)
 		if major and absf(y - center.y) > 16.0:
 			_text_r(Vector2(center.x - 16, y + 5), str(k), 14, col)
+	# kırmızı bölge (VNE): şeridin sağında kalın kırmızı çizgi
+	var vne := _vne_kmh()
+	if vne > 0.0:
+		var vy := center.y - (vne - v) / span * half
+		if vy > center.y - half:
+			var red := Color(1.0, 0.3, 0.25)
+			_line(Vector2(center.x + 4, center.y - half), Vector2(center.x + 4, minf(vy, center.y + half)), red, 4.0)
+			if vy < center.y + half:
+				_line(Vector2(center.x - 14, vy), Vector2(center.x + 8, vy), red, 2.0)
 	_box_text(Vector2(center.x - 48, center.y), "%d" % v, 20, col, 76.0)
 	_text_r(Vector2(center.x - 8, center.y + half + 22), "km/sa", 12, col)
 	var aoa := ("α %.1f°" % vessel.aoa_deg()) if vessel.airspeed() > 25.0 else "α  —"
@@ -1057,7 +1066,42 @@ func _pfd_tape(r: Rect2, value: float, span: float, minor: float, major: float, 
 
 
 func _pfd_speed_tape(r: Rect2) -> void:
-	_pfd_tape(r, vessel.airspeed() * 3.6, 120.0, 10.0, 50.0, true, "HIZ km/sa", "M %.2f" % vessel.mach(), Color(0.45, 1.0, 0.65))
+	var v := vessel.airspeed() * 3.6
+	var vne := _vne_kmh()
+	var sub_col := Color(0.45, 1.0, 0.65)
+	if vne > 0.0 and v > vne * 0.9:
+		sub_col = Color(1.0, 0.32, 0.26)
+	_pfd_tape(r, v, 120.0, 10.0, 50.0, true, "HIZ km/sa", "M %.2f" % vessel.mach(), sub_col)
+	# kırmızı bölge: bu irtifada düz uçuşta yapının dayanamayacağı hız (StructLimits)
+	if vne > 0.0:
+		var half := r.size.y * 0.5
+		var y := r.get_center().y - (vne - v) / 120.0 * half
+		if y > r.position.y + 2.0:
+			var top := r.position.y + 2.0
+			var y2 := minf(y, r.end.y - 2.0)
+			for i in int((y2 - top) / 6.0) + 1:
+				var yy := top + i * 6.0
+				_root.draw_rect(Rect2(r.end.x - 7.0, yy, 5.0, minf(3.0, y2 - yy)), Color(1.0, 0.25, 0.2, 0.9))
+			if y < r.end.y - 2.0:
+				_root.draw_line(Vector2(r.position.x + 2.0, y), Vector2(r.end.x - 2.0, y), Color(1.0, 0.25, 0.2), 2.0)
+				_text_c(Vector2(r.get_center().x - 6.0, y - 4.0), "KOPAR", 9, Color(1.0, 0.35, 0.3), _font_bold)
+
+
+var _vne := 0.0
+var _vne_t := 0.0
+var _vne_for: Vessel
+var _vne_parts := 0
+
+
+## Bu irtifada (yoğunlukta) düz uçuşta yapının kopacağı hız, km/sa (0 = bilinmiyor). 1 sn'de bir.
+func _vne_kmh() -> float:
+	_vne_t -= get_process_delta_time()
+	if vessel != _vne_for or vessel.parts.size() != _vne_parts or _vne_t <= 0.0:
+		_vne_for = vessel
+		_vne_parts = vessel.parts.size()
+		_vne_t = 1.0
+		_vne = float(StructLimits.estimate(vessel, vessel.air_density())["vne"]) * 3.6
+	return _vne
 
 
 func _pfd_alt_tape(r: Rect2) -> void:
@@ -1114,7 +1158,10 @@ func _pfd_g_bar(r: Rect2) -> void:
 		var sg := maxf(absf(g), 1.0) / vessel.max_stress
 		if sg < gmax:
 			var sy: float = bar.end.y - bar.size.y * clampf((sg - gmin) / span, 0.0, 1.0)
-			_root.draw_line(Vector2(bar.position.x - 3, sy), Vector2(bar.end.x + 3, sy), Color(1, 1, 1, 0.9), 1.0)
+			# yapı limiti: bu G'de ilk parça kopar (anlık yük oranından)
+			var lc := Color(1.0, 0.3, 0.25) if vessel.max_stress > 0.7 else Color(1, 1, 1, 0.9)
+			_root.draw_line(Vector2(bar.position.x - 3, sy), Vector2(bar.end.x + 3, sy), lc, 2.0)
+			_root.draw_string(_font_bold, Vector2(bar.end.x + 5, sy + 4), "KOPAR", HORIZONTAL_ALIGNMENT_LEFT, -1, 9, lc)
 	_text_c(Vector2(r.get_center().x, r.position.y - 3), "G", 10, Color(0.6, 0.68, 0.74), _font_bold)
 	_text_c(Vector2(r.get_center().x, r.end.y + 14), "%+.1f" % g, 12, gcol, _font_bold)
 	var strain: float = player.g_strain if player else 0.0

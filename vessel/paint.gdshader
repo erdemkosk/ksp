@@ -23,6 +23,11 @@ instance uniform float soot_r = 1.0;
 // uçak dönse de (ters uçuşta) değişmesin diye dünya normali yerine bunlar kullanılır.
 instance uniform vec3 fwd_m = vec3(0.0, 0.0, -1.0);
 instance uniform vec3 up_m = vec3(0.0, 1.0, 0.0);
+// Yapı zorlanması (StressFx yazar): rgb renk, a şiddet — %70 sarı, %90 kırmızı, %100 yanıp söner
+instance uniform vec4 stress_glow = vec4(0.0);
+// Kanat bükülmesi (yalnız görüntü, StressFx yazar): xyz ağ uzayında bükülme yönü × katsayı,
+// w gövde ekseninin ağ uzayındaki x'i (kanat kökü)
+instance uniform vec4 flex = vec4(0.0);
 
 float hash(vec3 p) {
 	p = fract(p * 0.3183099 + 0.1);
@@ -44,6 +49,11 @@ void vertex() {
 	lp = VERTEX;
 	ln = NORMAL;
 	wn = (MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz;
+	// yük altında kanat ucu kalkar: kökten uzaklığın karesiyle (desen lp'de sabit kalır)
+	if (flex.x != 0.0 || flex.y != 0.0 || flex.z != 0.0) {
+		float d = min(abs(VERTEX.x - flex.w), 12.0);
+		VERTEX += flex.xyz * d * d;
+	}
 }
 
 void fragment() {
@@ -131,6 +141,9 @@ void fragment() {
 	// kabuğun iç yüzü (kokpitten ya da açık gövdeden görünür): boya değil koyu iç astar
 	if (inside) {
 		ALBEDO = vec3(0.13, 0.135, 0.14);
+	} else if (stress_glow.a > 0.0) {
+		ALBEDO = mix(ALBEDO, stress_glow.rgb, stress_glow.a * 0.55);
+		EMISSION = stress_glow.rgb * stress_glow.a * 1.2;
 	}
 	// boya metal değil: düşük metallik, ince vernik (aksi halde gökyüzünü ayna gibi yansıtıp deseni siliyordu)
 	METALLIC = 0.06 + rivet * 0.5 + chip * 0.75;

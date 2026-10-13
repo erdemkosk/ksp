@@ -2141,6 +2141,7 @@ func _update_stats() -> void:
 	# görsel pano: karakter altıgeni, denge terazisi, göstergeler, pist (DesignDashboard)
 	if is_instance_valid(_dash):
 		var est: Dictionary = MissionCheck.estimate(v) if thrust > 0.0 and wing_area >= 1.0 else {}
+		var lim := StructLimits.estimate(v)   # deniz seviyesinde kopma hızı / G, ilk giden parça
 		var zmin := INF
 		var zmax := -INF
 		var hp_sum := 0.0
@@ -2157,6 +2158,8 @@ func _update_stats() -> void:
 			"guns": guns, "missiles": missiles, "bombs": v.bombs_left(false) + v.bombs_left(true),
 			"hp": hp_sum, "mass": mass, "com_z": com.z, "col_z": col.z, "has_col": col_area > 0.0,
 			"dry_z": com.z + float(est.get("cg_shift", 0.0)), "z_min": zmin, "z_max": zmax,
+			"vne_kmh": float(lim["vne"]) * 3.6, "g_break": float(lim["g"]),
+			"vne_part": lim["vne_part"], "g_part": lim["g_part"],
 		})
 	# uyarılar: tıklanınca ilgili parçalar yanıp söner ([url=tür])
 	var warns := PackedStringArray()

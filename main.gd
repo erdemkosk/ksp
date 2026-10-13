@@ -32,6 +32,7 @@ var sky: SkyController
 var interaction: CockpitInteraction
 var pilot: PilotCharacter          ## EVA'daki pilot (yoksa null)
 var flight_stats: FlightStats       ## uçuş kaydı (uçuş sonu raporunda tasarım notları)
+var stress_fx: StressFx             ## yapı zorlanması: parça rengi, kanat bükülmesi, gıcırtı
 var audio: AudioManager
 
 var _time := 0.0
@@ -539,6 +540,10 @@ func _spawn(xform: Transform3D, velocity: Vector3) -> void:
 		flight_stats = FlightStats.new()
 		add_child(flight_stats)
 	flight_stats.vessel = vessel
+	if not is_instance_valid(stress_fx):
+		stress_fx = StressFx.new()
+		add_child(stress_fx)
+	stress_fx.vessel = vessel
 	for i in vessel.parts.size():
 		vessel.parts[i].set_meta("bi", i)
 	craft_cost = Career.craft_cost(data)
