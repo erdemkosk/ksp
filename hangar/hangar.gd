@@ -3178,6 +3178,20 @@ func _flat(color: Color, radius: int) -> StyleBoxFlat:
 
 func _take_screenshot(path: String) -> void:
 	Game.args.erase("screenshot")
+	# isteğe bağlı kamera: --shot-yaw=90 --shot-pitch=5 (derece), --shot-dist=30
+	if Game.args.has("shot-yaw"):
+		_yaw = deg_to_rad(float(Game.args["shot-yaw"]))
+		_pitch = deg_to_rad(float(Game.args.get("shot-pitch", "5")))
+		if Game.args.has("shot-dist"):
+			_dist = float(Game.args["shot-dist"])
+		# --shot-at=parça_id: kamera o parçaya odaklanır
+		if Game.args.has("shot-at") and is_instance_valid(_preview):
+			for p in _preview.parts:
+				if p.part_id == String(Game.args["shot-at"]):
+					_target = _craft_root.global_transform * p.position
+					break
+		_update_camera()
+		await RenderingServer.frame_post_draw
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(path)
 	print("Ekran görüntüsü: ", path)

@@ -33,6 +33,7 @@ const PART_ACT := {
 	"drop_tank": 2, "refuel_probe": 2, "wingtip_tank": 2, "jet_engine_big": 2, "twin_adapter": 2,
 	"turbofan": 2, "bomb_bay": 2, "harm_rail": 2, "ship_missile_rail": 2, "lgb_rail": 2, "targeting_pod": 2,
 	"cargo_bay_heavy": 2, "gear_main_heavy": 2, "gear_nose_heavy": 2, "tail_turret": 2,
+	"gear_main_tandem": 2, "gear_nose_short": 2,
 	"ramjet": 3, "jet_engine_tvc": 3, "cruise_missile_rail": 3, "awacs_dome": 3, "nose_chine": 3,
 	"lifting_body": 3, "tail_v": 3, "rocket_engine": 3,
 }

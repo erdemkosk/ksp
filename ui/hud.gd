@@ -1085,6 +1085,18 @@ func _pfd_speed_tape(r: Rect2) -> void:
 			if y < r.end.y - 2.0:
 				_root.draw_line(Vector2(r.position.x + 2.0, y), Vector2(r.end.x - 2.0, y), Color(1.0, 0.25, 0.2), 2.0)
 				_text_c(Vector2(r.get_center().x - 6.0, y - 4.0), "KOPAR", 9, Color(1.0, 0.35, 0.3), _font_bold)
+	# takım açıkken: takım hız sınırı (sarı); üstünde takım hasar alır
+	if vessel.gear_deploy() > 0.05:
+		var glim := INF
+		for m in vessel.modules:
+			if m is LandingGearModule:
+				glim = minf(glim, m.speed_limit() * 3.6)
+		if glim < INF:
+			var gy := r.get_center().y - (glim - v) / 120.0 * r.size.y * 0.5
+			if gy > r.position.y + 2.0 and gy < r.end.y - 2.0:
+				var gc := Color(1.0, 0.8, 0.2) if v < glim else Color(1.0, 0.3, 0.2)
+				_root.draw_line(Vector2(r.position.x + 2.0, gy), Vector2(r.end.x - 2.0, gy), gc, 2.0)
+				_text_c(Vector2(r.get_center().x - 6.0, gy - 4.0), "TAKIM", 9, gc, _font_bold)
 
 
 var _vne := 0.0

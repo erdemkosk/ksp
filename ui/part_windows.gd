@@ -98,7 +98,7 @@ func _process(delta: float) -> void:
 		_label.text = h.title + "  ·  sağ tık"
 		_label.position = mp + Vector2(18, 10)
 	if h != _hover:
-		_set_overlay(_hover, _open_mat if _windows.has(_hover) else null)
+		_set_overlay(_hover, null)
 		_hover = h
 		_set_overlay(_hover, _hover_mat)
 	for part in _windows.keys():
@@ -142,13 +142,47 @@ func _toggle(part: Part) -> void:
 		elif m is RadarModule:
 			buttons["radar"] = _button(row, "Radar", func() -> void:
 				part.vessel.radar_on = not part.vessel.radar_on)
+		# KSP gibi parçaya özel işlemler
+		elif m is RampModule:
+			buttons["ramp"] = _button(row, "Rampa", func() -> void: m.toggle())
+		elif m is CargoModule:
+			buttons["cargo"] = _button(row, "Sandık bırak", func() -> void:
+				if m.crates > 0:
+					m.release())
+			buttons["cargo_all"] = _button(row, "Yükü boşalt", func() -> void:
+				_unload(part, m))
+		elif m is FuelTankModule and not buttons.has("dump"):
+			buttons["dump"] = _button(row, "Yakıt at", func() -> void:
+				part.vessel.fuel_dumping = not part.vessel.fuel_dumping)
+		elif m is ChuteModule:
+			buttons["chute"] = _button(row, "Paraşüt", func() -> void:
+				if m.state == 0:
+					m.deploy()
+				else:
+					m.release())
+		elif m is BombModule:
+			buttons["bomb"] = _button(row, "Bırak", func() -> void:
+				if m.loaded:
+					m.release())
 	w.closed.connect(func() -> void: _close(part))
 	add_child(w)
 	var mouse := get_viewport().get_mouse_position()
 	w.position = (mouse + Vector2(24, -40)).clamp(Vector2(8, 60), size - Vector2(270, 260))
 	_windows[part] = {"window": w, "info": info, "hp": hp, "stress": stress, "buttons": buttons}
-	_set_overlay(part, _open_mat if part != _hover else _hover_mat)
+	_set_overlay(part, _hover_mat if part == _hover else null)   # açık pencere parçayı boyamaz (yeşil iz kalıyordu)
 	_refresh(part, _windows[part])
+
+## Bölmedeki bütün sandıkları sırayla (0.35 sn arayla) bırak; rampa varsa önce açılır.
+func _unload(part: Part, m: CargoModule) -> void:
+	if m.crates <= 0:
+		part.vessel.system_message.emit("Bölme boş")
+		return
+	for r in part.vessel.modules:
+		if r is RampModule and not r.open:
+			r.toggle()
+	while is_instance_valid(part) and is_instance_valid(m) and m.crates > 0 and part.vessel != null:
+		m.release()
+		await get_tree().create_timer(0.35).timeout
 
 
 func _close(part: Part) -> void:
@@ -207,7 +241,28 @@ func _refresh(part: Part, d: Dictionary) -> void:
 			if b:
 				b.text = "Motoru durdur" if m.state != EngineModule.State.OFF else "Motoru çalıştır"
 		elif m is FuelTankModule:
-			lines.append("Yakıt  %d / %d kg" % [m.fuel, m.capacity])
+			lines.append("Yakıt  %d / %d kg%s" % [m.fuel, m.capacity, "  · ATILIYOR" if v.fuel_dumping else ""])
+			var db: Button = d["buttons"].get("dump")
+			if db:
+				db.text = "Yakıt atmayı durdur" if v.fuel_dumping else "Yakıt at"
+		elif m is RampModule:
+			var rs: String = "AÇIK" if m.deploy >= 0.99 else ("KAPALI" if m.deploy <= 0.01 else "hareket ediyor %%%d" % (m.deploy * 100.0))
+			lines.append("Rampa  %s" % rs)
+			var rb2: Button = d["buttons"].get("ramp")
+			if rb2:
+				rb2.text = "Rampayı kapat" if m.open else "Rampayı aç"
+		elif m is CargoModule:
+			lines.append("Kargo  %d sandık (%d kg)" % [m.crates, m.extra_mass()])
+			for k in ["cargo", "cargo_all"]:
+				var cb: Button = d["buttons"].get(k)
+				if cb:
+					cb.disabled = m.crates <= 0
+		elif m is ChuteModule:
+			lines.append("Paraşüt  %s" % ["paketli", "AÇIK", "kesildi"][m.state])
+			var pb: Button = d["buttons"].get("chute")
+			if pb:
+				pb.text = ["Paraşütü aç", "Paraşütü kes", "Paraşüt kullanıldı"][m.state]
+				pb.disabled = m.state == 2
 		elif m is ControlSurfaceModule:
 			lines.append("Kanatçık  %+.1f°" % rad_to_deg(m.deflection))
 		elif m is WingModule:
@@ -240,6 +295,9 @@ func _refresh(part: Part, d: Dictionary) -> void:
 			lines.append("Prob   %s · alınan %d kg" % ["BAĞLI" if m.connected() else "hazır", m.received])
 		elif m is BombModule:
 			lines.append("%s   %s" % ["Lazer bomba" if m.guided else "Bomba", "TAKILI" if m.loaded else "BIRAKILDI"])
+			var bb: Button = d["buttons"].get("bomb")
+			if bb:
+				bb.disabled = not m.loaded
 		elif m is CockpitModule:
 			lines.append("Pilot  %s" % ("içeride" if v.has_pilot() else "yok"))
 	(d["info"] as Label).text = "\n".join(lines)

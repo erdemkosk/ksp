@@ -20,7 +20,8 @@
 		{"part": "rudder",           "pos": [0, 2.0, 21.3], "rot": [0, 0, 90], "scale": 1.5},
 		{"part": "stabilator",       "pos": [2.0, 0.3, 20.0], "mirror": true, "scale": 1.5},
 
-		{"part": "gear_nose_heavy",  "pos": [0, -0.9, -1.35], "scale": 1.4},
-		{"part": "gear_main_heavy",  "pos": [1.05, -0.9, 9.9], "mirror": true, "scale": 1.15}
+		{"part": "gear_nose_short",  "pos": [0, -0.85, -1.35], "scale": 1.2},
+		{"part": "gear_fairing",     "pos": [1.05, -0.62, 9.6], "mirror": true, "scale": 1.15},
+		{"part": "gear_main_tandem", "pos": [1.1, -0.85, 9.6], "mirror": true, "scale": 1.15}
 	]
 }

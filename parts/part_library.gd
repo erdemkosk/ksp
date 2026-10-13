@@ -383,8 +383,10 @@ static func _register_civil() -> void:
 		"size": Vector3(1.3, 1.3, 3.0),
 		"visuals": [
 			{"type": "lathe", "profile": [Vector2(-1.5, 0.65), Vector2(1.5, 0.65)], "mat": "paint", "color": Color(0.42, 0.46, 0.36)},
-			{"type": "box", "size": Vector3(0.9, 0.04, 2.4), "pos": Vector3(0, -0.64, 0), "mat": "dark"},
-			{"type": "box", "size": Vector3(0.05, 0.03, 2.4), "pos": Vector3(0, -0.66, 0), "mat": "yellow"},
+			# alt yük kapağı gövde eğrisinde (düz levha gövdenin altından taşıyordu): derz + kapak + sarı şerit
+			{"type": "lathe", "profile": [Vector2(-1.22, 0.652), Vector2(1.22, 0.652)], "mat": "dark", "arc_from": 247.0, "arc_to": 293.0},
+			{"type": "lathe", "profile": [Vector2(-1.18, 0.655), Vector2(1.18, 0.655)], "mat": "paint_dark", "arc_from": 250.0, "arc_to": 290.0},
+			{"type": "lathe", "profile": [Vector2(-1.18, 0.658), Vector2(1.18, 0.658)], "mat": "yellow", "arc_from": 269.0, "arc_to": 271.0},
 		],
 		"colliders": [{"type": "cyl", "r": 0.65, "len": 3.0}],
 		"modules": [
@@ -398,24 +400,30 @@ static func _register_civil() -> void:
 	hold["mass"] = 620.0
 	hold["hp"] = 220.0
 	hold["cost"] = 1600
-	for sx in [-0.25, 0.25]:      # makaralı yük rayları (altta, görünür şerit)
-		hold["visuals"].append({"type": "box", "size": Vector3(0.06, 0.03, 2.8), "pos": Vector3(sx, -0.63, 0), "mat": "metal"})
-	hold["visuals"].append({"type": "box", "size": Vector3(0.04, 0.22, 0.22), "pos": Vector3(-0.645, 0.18, -1.0), "mat": "screen", "color": Color(0.2, 0.3, 0.4)})
+	for a in [[256.0, 258.0], [282.0, 284.0]]:      # makaralı yük rayları (altta, gövde eğrisinde ince şerit)
+		hold["visuals"].append({"type": "lathe", "profile": [Vector2(-1.4, 0.658), Vector2(1.4, 0.658)], "mat": "metal", "arc_from": a[0], "arc_to": a[1]})
+	# sol yan küçük pencere (gövde yüzeyinde)
+	hold["visuals"].append({"type": "lathe", "profile": [Vector2(-1.11, 0.654), Vector2(-0.89, 0.654)], "mat": "screen", "color": Color(0.2, 0.3, 0.4), "arc_from": 155.0, "arc_to": 174.0})
 	hold["modules"][0] = {"type": "cargo", "crates": 10}
 	_defs["cargo_bay_heavy"] = hold
 	_defs["cargo_ramp"] = {
 		"title": "Kargo Rampası (arka yük kapısı, 2 sandık)", "category": "gövde", "mass": 380.0, "hp": 170.0, "cost": 1100,
 		"size": Vector3(1.3, 1.3, 3.0),
 		"visuals": [
-			# arkaya doğru incelen kuyruk bölümü; altta yukarı kalkık rampa kapısı
-			{"type": "lathe", "profile": [Vector2(-1.5, 0.65), Vector2(-0.6, 0.64), Vector2(0.4, 0.55), Vector2(1.2, 0.4), Vector2(1.5, 0.32)], "mat": "paint", "color": Color(0.42, 0.46, 0.36)},
-			{"type": "box", "size": Vector3(0.95, 0.05, 2.3), "pos": Vector3(0, -0.47, 0.05), "rot": Vector3(-9.0, 0, 0), "mat": "paint_dark"},
-			{"type": "box", "size": Vector3(1.0, 0.04, 0.04), "pos": Vector3(0, -0.63, -1.1), "mat": "dark"},
-			{"type": "box", "size": Vector3(0.05, 0.03, 2.2), "pos": Vector3(0, -0.5, 0.05), "rot": Vector3(-9.0, 0, 0), "mat": "yellow"},
+			# arkaya doğru incelen kuyruk bölümü: önde tam halka, ortada altı açık (rampa yuvası),
+			# arkada kapalı kuyruk ucu; içeride koyu kargo bölmesi astarı
+			{"type": "lathe", "profile": [Vector2(-1.5, 0.65), Vector2(-1.2, 0.648)], "mat": "paint", "color": Color(0.42, 0.46, 0.36)},
+			{"type": "lathe", "profile": [Vector2(-1.2, 0.648), Vector2(-0.6, 0.64), Vector2(0.4, 0.55), Vector2(1.2, 0.4), Vector2(1.35, 0.36)], "mat": "paint", "color": Color(0.42, 0.46, 0.36), "arc_from": 305.0, "arc_to": 595.0, "inner": 1.0},
+			{"type": "lathe", "profile": [Vector2(1.35, 0.36), Vector2(1.5, 0.32), Vector2(1.62, 0.18), Vector2(1.68, 0.0)], "mat": "paint", "color": Color(0.42, 0.46, 0.36)},
+			{"type": "lathe", "profile": [Vector2(-1.2, 0.62), Vector2(-0.6, 0.61), Vector2(0.4, 0.52), Vector2(1.2, 0.37), Vector2(1.36, 0.0)], "mat": "interior", "color": Color(0.16, 0.17, 0.16)},
+			# rampa kapısı: gövde altıyla aynı eğride (kapalıyken gövdeye oturur); RampModule menteşesinden indirir
+			{"type": "lathe", "name": "Ramp", "profile": [Vector2(-1.2, 0.655), Vector2(-0.6, 0.648), Vector2(0.4, 0.558), Vector2(1.2, 0.408), Vector2(1.35, 0.368)], "mat": "paint_dark", "arc_from": 235.0, "arc_to": 305.0, "inner": 1.0},
+			{"type": "box", "parent": "Ramp", "size": Vector3(0.05, 0.02, 2.3), "pos": Vector3(0, -0.6, 0.05), "rot": Vector3(-5.5, 0, 0), "mat": "yellow"},
 		],
 		"colliders": [{"type": "cyl", "r": 0.55, "len": 3.0}],
 		"modules": [
 			{"type": "cargo", "crates": 2},
+			{"type": "ramp"},
 			{"type": "body_drag", "front_area": 1.33, "side_area": 3.2, "cd_front": 0.03},
 		],
 	}
@@ -678,8 +686,13 @@ static func _airliner_cockpit() -> Dictionary:
 		{"type": "box", "size": Vector3(1.26, 0.05, 0.2), "pos": Vector3(0, 0.89, pz - 0.13) + d, "noscale": true, "mat": "dark"},
 		{"type": "box", "size": Vector3(1.1, 0.3, 0.4), "pos": Vector3(0, 0.38, pz - 0.2) + d, "noscale": true, "mat": "interior"},
 		# yanda giriş kapısı ve yan cam, gövde bandı (kabinle aynı renk)
-		{"type": "box", "size": Vector3(0.04, 0.95, 0.6), "pos": Vector3(-0.645, -0.02, 1.35), "mat": "paint_dark"},
-		{"type": "box", "size": Vector3(1.32, 0.12, 2.6), "pos": Vector3(0, -0.05, 0.7), "mat": "paint", "color": Color(0.15, 0.35, 0.6)},
+		# hepsi gövde eğrisinde ince yüzeyler (düz kutular kenarlarından dışarı taşıyordu):
+		# gövde bandı iki yanda; kapı = koyu derz + üstünde aynı renk kapak + küçük kol (sol yan = 180°)
+		{"type": "lathe", "profile": [Vector2(-0.6, 0.653), Vector2(2.0, 0.653)], "mat": "paint", "color": Color(0.15, 0.35, 0.6), "arc_from": 179.0, "arc_to": 190.0},
+		{"type": "lathe", "profile": [Vector2(-0.6, 0.653), Vector2(2.0, 0.653)], "mat": "paint", "color": Color(0.15, 0.35, 0.6), "arc_from": 350.0, "arc_to": 361.0},
+		{"type": "lathe", "profile": [Vector2(1.0, 0.655), Vector2(1.7, 0.655)], "mat": "paint_dark", "arc_from": 147.0, "arc_to": 213.0},
+		{"type": "lathe", "profile": [Vector2(1.03, 0.658), Vector2(1.67, 0.658)], "mat": "paint", "color": paint, "arc_from": 150.0, "arc_to": 210.0},
+		{"type": "lathe", "profile": [Vector2(1.56, 0.664), Vector2(1.62, 0.664)], "mat": "dark", "arc_from": 176.0, "arc_to": 184.0},
 	]
 	# cam dikmeleri: ortada ve iki yanda (cam bandının üstünde, ince koyu şeritler)
 	for a in [[87.5, 92.5], [52.0, 55.0], [125.0, 128.0], [15.0, 18.0], [162.0, 165.0]]:
@@ -748,6 +761,7 @@ static func _register_more() -> void:
 			gh["visuals"].append({"type": "cyl", "parent": "Wheel", "axis": "y", "r": 0.24, "len": 0.3, "pos": Vector3(0, -wx, wz), "mat": "metal"})
 	gh["strength_kn"] = 160.0
 	gh["cost"] = 1200
+	(gh["modules"] as Array)[0]["max_speed"] = 95.0   # ağır takım: ~340 km/sa üstünde açık kalmaz
 	_defs["gear_main_heavy"] = gh
 	var gn := _gear("Ağır Burun Takımı (çift teker)", 160.0, 0.32, 150000.0, 20000.0, true)
 	gn["size"] = Vector3(0.8, 1.8, 0.8)
@@ -762,7 +776,48 @@ static func _register_more() -> void:
 		gn["visuals"].append({"type": "cyl", "parent": "Wheel", "axis": "y", "r": 0.18, "len": 0.22, "pos": Vector3(0, -wx, 0), "mat": "metal"})
 	gn["strength_kn"] = 70.0
 	gn["cost"] = 600
+	(gn["modules"] as Array)[0]["max_speed"] = 95.0
 	_defs["gear_nose_heavy"] = gn
+	# yüksek kanatlı nakliye (C-130 tipi): gövde yere yakın, kısa bacaklı tandem takım gövde yanındaki
+	# kaportaya (gear_fairing) katlanır; burunda kısa çift teker
+	var gt := _gear("Gövde Yanı Tandem Takım (kısa, 2 teker)", 360.0, 0.42, 420000.0, 52000.0, false)
+	gt["size"] = Vector3(0.6, 0.8, 1.8)
+	(gt["modules"] as Array)[0]["rest_length"] = 0.8
+	gt["visuals"] = [
+		{"type": "cyl", "name": "Strut", "axis": "y", "r": 0.11, "len": 0.8, "pos": Vector3(0, -0.4, 0), "mat": "metal"},
+		{"type": "cyl", "name": "Wheel", "axis": "x", "r": 0.09, "len": 0.36, "pos": Vector3(0, -0.8, 0), "mat": "metal"},
+		{"type": "box", "parent": "Wheel", "size": Vector3(0.12, 0.16, 1.25), "mat": "metal"},   # boji kirişi
+	]
+	for wz in [-0.55, 0.55]:   # tandem: aynı hizada öne-arkaya iki teker ("Wheel" çerçevesi: dünya (wx,0,wz) → (0,-wx,wz))
+		gt["visuals"].append({"type": "cyl", "parent": "Wheel", "axis": "y", "r": 0.42, "len": 0.3, "pos": Vector3(0, 0, wz), "mat": "rubber"})
+		gt["visuals"].append({"type": "cyl", "parent": "Wheel", "axis": "y", "r": 0.24, "len": 0.32, "pos": Vector3(0, 0, wz), "mat": "metal"})
+	gt["strength_kn"] = 160.0
+	gt["cost"] = 1100
+	(gt["modules"] as Array)[0]["max_speed"] = 90.0   # C-130: ~320 km/sa
+	_defs["gear_main_tandem"] = gt
+	var gns := _gear("Kısa Burun Takımı (çift teker)", 140.0, 0.32, 150000.0, 20000.0, true)
+	gns["size"] = Vector3(0.7, 0.9, 0.7)
+	(gns["modules"] as Array)[0]["rest_length"] = 0.9
+	gns["visuals"] = [
+		{"type": "cyl", "name": "Strut", "axis": "y", "r": 0.09, "len": 0.9, "pos": Vector3(0, -0.45, 0), "mat": "metal"},
+		{"type": "cyl", "name": "Wheel", "axis": "x", "r": 0.1, "len": 0.56, "pos": Vector3(0, -0.9, 0), "mat": "metal"},
+	]
+	for wx in [-0.18, 0.18]:
+		gns["visuals"].append({"type": "cyl", "parent": "Wheel", "axis": "y", "r": 0.32, "len": 0.2, "pos": Vector3(0, -wx, 0), "mat": "rubber"})
+		gns["visuals"].append({"type": "cyl", "parent": "Wheel", "axis": "y", "r": 0.18, "len": 0.22, "pos": Vector3(0, -wx, 0), "mat": "metal"})
+	gns["strength_kn"] = 70.0
+	gns["cost"] = 550
+	(gns["modules"] as Array)[0]["max_speed"] = 90.0
+	_defs["gear_nose_short"] = gns
+	# takım kaportası: gövde yanına yapışan, iki ucu sivrilen uzun basık çıkıntı (takım içine katlanır)
+	_defs["gear_fairing"] = {
+		"title": "Takım Kaportası (gövde yanı çıkıntı)", "category": "gövde", "mass": 120.0, "hp": 90.0, "cost": 300,
+		"size": Vector3(0.9, 1.0, 3.6),
+		"visuals": [{"type": "lathe", "segments": 20, "y_scale": 1.15, "mat": "paint", "color": Color(0.42, 0.46, 0.36),
+			"profile": [Vector2(-1.8, 0.0), Vector2(-1.45, 0.28), Vector2(-0.9, 0.42), Vector2(0.9, 0.42), Vector2(1.5, 0.3), Vector2(1.8, 0.0)]}],
+		"colliders": [{"type": "cyl", "r": 0.4, "len": 3.4}],
+		"modules": [{"type": "body_drag", "front_area": 0.5, "side_area": 2.4, "cd_front": 0.06}],
+	}
 	# roket motoru: alık istemez, çok güçlü, yakıtı çok hızlı yakar
 	_defs["rocket_engine"] = {
 		"title": "R-200 Roket Motoru", "category": "motor", "mass": 480.0, "hp": 150.0, "cost": 3800,

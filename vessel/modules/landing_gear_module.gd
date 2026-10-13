@@ -21,6 +21,11 @@ var deploy := 1.0
 const DEPLOY_RATE := 0.4
 const FOLD_DEG := 88.0
 
+## Açık takım hız sınırı (m/s; gerçekte VLE): üstünde takım zorlanır, hasar alır, sürerse kopar.
+## Açılıp kapanırken (kapaklar açık, dikme yolda) sınır %15 daha düşük. Ağır takımlar daha hassas.
+var max_speed := 140.0
+var _over_warned := false
+
 var _visual: Node3D
 var _strut: Node3D
 var _wheel: Node3D
@@ -34,6 +39,7 @@ func setup(p: Dictionary) -> void:
 	steerable = p.get("steerable", steerable)
 	max_steer = deg_to_rad(p.get("max_steer_deg", 35.0))
 	drag_area = p.get("drag_area", 0.25 if steerable else 0.4)
+	max_speed = p.get("max_speed", max_speed)
 
 
 func on_attached() -> void:
@@ -47,9 +53,36 @@ func physics_tick(delta: float) -> void:
 	grounded = false
 	compression = 0.0
 	_apply_drag()
+	_overspeed(delta)
 	if deploy > 0.97:
 		_simulate()
 	_update_visual()
+
+
+## Bu takımın şu anki hız sınırı (m/s): hareket halindeyken daha düşük.
+func speed_limit() -> float:
+	return max_speed * (0.85 if deploy < 0.99 else 1.0)
+
+
+## Hız sınırı üstünde açık / açılan takım: uyarı, sınırı aştıkça hızlanan hasar → kopar.
+func _overspeed(delta: float) -> void:
+	var key := "gear%d" % part.get_instance_id()
+	var lim := speed_limit()
+	var spd := vessel.airspeed()
+	if deploy <= 0.05 or spd <= lim:
+		if vessel.failures.has(key):
+			vessel.failures.erase(key)
+		if spd < lim * 0.9:
+			_over_warned = false
+		return
+	var over := (spd - lim) / lim
+	vessel.failures[key] = "TAKIM HIZ SINIRI"
+	if not _over_warned:
+		_over_warned = true
+		vessel.system_message.emit("TAKIM HIZ SINIRI! %d km/sa üstünde açık takım hasar alır — yavaşla ya da topla" % (lim * 3.6))
+		Sfx.play_at("impact_metal_2.ogg", part.global_position, -4.0, 0.7, 600.0)
+	# %10 aşımda ~4 sn, %25 aşımda ~2 sn dayanır
+	vessel.damage_part(part, part.max_hp * (0.08 + over * 1.5) * delta)
 
 
 func _simulate() -> void:

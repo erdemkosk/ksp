@@ -20,6 +20,7 @@ const MODULE_SCRIPTS := {
 	"chute": preload("res://vessel/modules/chute_module.gd"),
 	"passenger": preload("res://vessel/modules/passenger_module.gd"),
 	"cargo": preload("res://vessel/modules/cargo_module.gd"),
+	"ramp": preload("res://vessel/modules/ramp_module.gd"),
 	"targeting_pod": preload("res://vessel/modules/targeting_pod_module.gd"),
 	"ecm": preload("res://vessel/modules/ecm_module.gd"),
 	"irst": preload("res://vessel/modules/irst_module.gd"),
@@ -413,10 +414,12 @@ static func _make_mesh(v: Dictionary, cache_key: String) -> MeshInstance3D:
 			if not _mesh_cache.has(cache_key):
 				_mesh_cache[cache_key] = MeshFactory.wing(v["span"], v["root"], v["tip"], v["sweep"], v["thick"])
 			mi.mesh = _mesh_cache[cache_key]
+			mi.set_meta("wing_mesh", true)   # _wing_spot (kokarda yeri) bu ağı okur
 		"wing_sections":
 			if not _mesh_cache.has(cache_key):
 				_mesh_cache[cache_key] = MeshFactory.wing_sections(v["secs"], v["thick"])
 			mi.mesh = _mesh_cache[cache_key]
+			mi.set_meta("wing_mesh", true)
 		"cyl":
 			var mesh := CylinderMesh.new()
 			var r: float = v.get("r", 0.5)
@@ -655,21 +658,88 @@ static func _add_decals(vessel: Vessel) -> void:
 				l.transform = Transform3D(Basis(right, up, n), Vector3(p.size.x * 0.05, side * half_t, p.size.z * 0.1))
 				p.add_child(l)
 		elif not vertical and absf(p.position.x) > 0.8 and p.size.x > 1.5:
-			var q := MeshInstance3D.new()
-			var qm := QuadMesh.new()
+			# yer: kanadın gerçek ağından — kökten uca %45'te, o kesitin veter ortası; üstte ve altta.
+			# (parça kutusundan tahmin oklu / daralan kanatlarda kokardayı kanadın dışına koyuyordu)
+			var spot := _wing_spot(p, 0.45)
 			var r := clampf(p.size.z * 0.38, 0.4, 1.1)
-			qm.size = Vector2(r, r)
-			q.mesh = qm
+			var top := Vector3(signf(p.position.x) * p.size.x * 0.22, half_t, p.size.z * 0.05)
+			var bottom := top - Vector3(0, half_t * 2.0, 0)
+			if not spot.is_empty():
+				r = minf(r, float(spot["chord"]) * 0.62)
+				top = spot["top"]
+				bottom = spot["bottom"]
 			var mat := StandardMaterial3D.new()
 			mat.albedo_texture = _roundel_texture()
 			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
 			mat.roughness = 0.5
-			q.material_override = mat
-			q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			var tip := signf(p.position.x)
-			q.position = Vector3(tip * p.size.x * 0.22, half_t + 0.01, p.size.z * 0.05)
-			q.rotation_degrees = Vector3(-90, 0, 0)
-			p.add_child(q)
+			for face in [[top + Vector3(0, 0.012, 0), -90.0], [bottom - Vector3(0, 0.012, 0), 90.0]]:
+				var q := MeshInstance3D.new()
+				var qm := QuadMesh.new()
+				qm.size = Vector2(r, r)
+				q.mesh = qm
+				q.material_override = mat
+				q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				q.position = face[0]
+				q.rotation_degrees = Vector3(face[1], 0, 0)
+				p.add_child(q)
+
+
+## Kanadın ağ noktalarından (parça uzayında) kökten uca `k` oranındaki kesit: {top, bottom, chord}.
+## Kök = gövde eksenine yakın uç. Kanat ağı bulunamazsa boş sözlük.
+static func _wing_spot(p: Part, k: float) -> Dictionary:
+	var pts := PackedVector3Array()
+	var stack: Array[Node] = [p]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		stack.append_array(n.get_children())
+		var mi := n as MeshInstance3D
+		if mi == null or not mi.mesh is ArrayMesh or not mi.has_meta("wing_mesh"):
+			continue
+		# ağdan parçaya dönüşüm (ağaçta olmayabilir: global yerine zinciri çarp)
+		var xf := Transform3D.IDENTITY
+		var cur: Node = mi
+		while cur != p and cur is Node3D:
+			xf = (cur as Node3D).transform * xf
+			cur = cur.get_parent()
+		for vtx in (mi.mesh as ArrayMesh).surface_get_arrays(0)[Mesh.ARRAY_VERTEX]:
+			pts.append(xf * vtx)
+		break
+	if pts.size() < 8:
+		return {}
+	var x0 := INF
+	var x1 := -INF
+	for q in pts:
+		x0 = minf(x0, q.x)
+		x1 = maxf(x1, q.x)
+	var root := x0 if absf(p.position.x + x0) < absf(p.position.x + x1) else x1
+	var tip := x1 if root == x0 else x0
+	var xs := lerpf(root, tip, k)
+	# ağ kesit halkalarından oluşur (çoğu kanatta yalnız kök ve uç): halkaları x'e göre grupla,
+	# xs'yi çevreleyen iki halkanın veter / kalınlık değerlerini ara değerle
+	var rings := {}   # yuvarlanmış x → [zmin, zmax, ytop, ybot]
+	for q in pts:
+		var key := snappedf(q.x, 0.02)
+		var r: Array = rings.get(key, [INF, -INF, -INF, INF])
+		rings[key] = [minf(r[0], q.z), maxf(r[1], q.z), maxf(r[2], q.y), minf(r[3], q.y)]
+	var keys := rings.keys()
+	keys.sort()
+	var lo: float = keys[0]
+	var hi: float = keys[-1]
+	for kx: float in keys:
+		if kx <= xs:
+			lo = kx
+		if kx >= xs:
+			hi = kx
+			break
+	var a: Array = rings[lo]
+	var b: Array = rings[hi]
+	var t := 0.0 if is_equal_approx(lo, hi) else (xs - lo) / (hi - lo)
+	var zmin := lerpf(a[0], b[0], t)
+	var zmax := lerpf(a[1], b[1], t)
+	if zmax - zmin < 0.2:
+		return {}
+	var zc := (zmin + zmax) * 0.5
+	return {"top": Vector3(xs, lerpf(a[2], b[2], t), zc), "bottom": Vector3(xs, lerpf(a[3], b[3], t), zc), "chord": zmax - zmin}
 
 
 # ------------------------------------------------------------------ kanat kökü kaportası
