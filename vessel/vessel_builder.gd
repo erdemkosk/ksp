@@ -87,6 +87,7 @@ static func build(craft: Dictionary) -> Vessel:
 			_add_part(vessel, entry["part"], c["pos"], c["rot"], c["flip"], sc, entry)
 	var t1 := Time.get_ticks_usec()
 	_add_fillets(vessel)
+	_add_transitions(vessel)
 	var t2 := Time.get_ticks_usec()
 	_add_pylons(vessel)
 	var t3 := Time.get_ticks_usec()
@@ -805,6 +806,105 @@ static func _add_fillets(v: Vessel) -> void:
 		mi.position = local_root - Vector3(root_sign * reach * 0.15, 0.0, chord * 0.04)
 		mi.scale = Vector3(reach, minf(thick * 1.7, 0.45), 1.0)
 		p.add_child(mi)
+
+
+# ------------------------------------------------------------------ gövde geçişleri
+
+## Uç uca takılı iki gövde parçasının yarıçapı farklıysa (gövde 0.65 → motor 0.55, kokpit → ince
+## kuyruk) arada keskin bir basamak kalıyordu: uçak "boru dizisi" gibi görünüyordu. Büyük parçadan
+## küçüğe yumuşakça daralan bir geçiş kaportası eklenir (büyük parçanın boyasıyla, ona bağlı).
+## Oyuncunun kendi tasarımlarında da çalışır.
+static func _add_transitions(v: Vessel) -> void:
+	var ends: Array[Dictionary] = []
+	for p in v.parts:
+		var e := _body_ends(p)
+		if not e.is_empty():
+			ends.append(e)
+	for a in ends:
+		for b in ends:
+			if a == b:
+				continue
+			# a'nın arka yüzü b'nin ön yüzüne değiyor mu (aynı eksende)
+			if Vector2(a["x"] - b["x"], a["y"] - b["y"]).length() > 0.12 or absf(float(a["zr"]) - float(b["zf"])) > 0.25:
+				continue
+			var ra: float = a["rr"]
+			var rb: float = b["rf"]
+			if absf(ra - rb) < 0.05 or minf(ra, rb) < 0.08:
+				continue
+			var big: Dictionary = a if ra > rb else b
+			var r_big := maxf(ra, rb)
+			var r_small := minf(ra, rb)
+			var joint: float = (float(a["zr"]) + float(b["zf"])) * 0.5
+			var length := clampf((r_big - r_small) * 3.0, 0.35, 1.6)
+			# büyük parça öndeyse kaporta geriye (+z), arkadaysa öne (-z) uzanır
+			var dir := 1.0 if big == a else -1.0
+			var prof: Array = []
+			for i in 9:
+				var t := float(i) / 8.0
+				var r := lerpf(r_big, r_small, 0.5 - 0.5 * cos(PI * t)) + 0.004   # yumuşak (kosinüs) daralma
+				prof.append(Vector2(joint + dir * (t * length - 0.02), r))
+			if dir < 0.0:
+				prof.reverse()
+			_fairing(big["part"], prof)
+
+
+## Gövde parçasının araç uzayında uç bilgisi: ön/arka z, ön/arka yarıçap, eksen x/y. Uygun değilse {}.
+static func _body_ends(p: Part) -> Dictionary:
+	var zdir := p.basis.z.normalized()
+	if absf(zdir.z) < 0.97 or not p.modules.any(func(m: PartModule) -> bool: return m is BodyDragModule):
+		return {}
+	var s := float(p.def.get("_scale", 1.0))
+	var zmin := INF
+	var zmax := -INF
+	var rf := 0.0
+	var rr := 0.0
+	for vis: Dictionary in p.def.get("visuals", []):
+		if vis.get("type", "") != "lathe" or vis.has("arc_from") or vis.has("parent") or vis.get("mat", "") in ["interior", "glass", "dark"]:
+			continue
+		var off: Vector3 = vis.get("pos", Vector3.ZERO)
+		for pt: Vector2 in vis.get("profile", []):
+			var z := pt.x + off.z
+			if z < zmin - 0.001:
+				zmin = z
+				rf = pt.y
+			elif absf(z - zmin) <= 0.001:
+				rf = maxf(rf, pt.y)
+			if z > zmax + 0.001:
+				zmax = z
+				rr = pt.y
+			elif absf(z - zmax) <= 0.001:
+				rr = maxf(rr, pt.y)
+	if zmin == INF:
+		return {}
+	var sg := signf(zdir.z)
+	var za := p.position.z + zmin * s * sg
+	var zb := p.position.z + zmax * s * sg
+	return {"part": p, "x": p.position.x, "y": p.position.y,
+		"zf": minf(za, zb), "zr": maxf(za, zb),
+		"rf": (rf if sg > 0.0 else rr) * s, "rr": (rr if sg > 0.0 else rf) * s}
+
+
+## Araç uzayında z ekseni boyunca bir döndürme kaportası; parçaya bağlanır (parça uzayına çevrilir).
+static func _fairing(p: Part, prof_vessel: Array) -> void:
+	var sg := signf(p.basis.z.normalized().z)
+	var local: Array = []
+	for q: Vector2 in prof_vessel:
+		local.append(Vector2((q.x - p.position.z) * sg, q.y))
+	if sg < 0.0:
+		local.reverse()
+	var mi := MeshInstance3D.new()
+	mi.name = "Transition"
+	mi.mesh = MeshFactory.lathe(local, 32)
+	# büyük parçanın boyası (renk / desen aynı kalsın)
+	var mat: Material = null
+	for n in p.find_children("*", "MeshInstance3D", true, false):
+		var mo := (n as MeshInstance3D).material_override
+		if mo is ShaderMaterial and mo.has_meta("paint"):
+			mat = mo
+			break
+	mi.material_override = mat if mat else material("paint")
+	p.add_child(mi)
+	# parça uzayında (parça düğümü ölçeksiz; ölçek Visual'da): lathe ekseni parçanın z'si, kökte
 
 
 static var _cockpit_panel: ShaderMaterial

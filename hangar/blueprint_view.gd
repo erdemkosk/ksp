@@ -188,7 +188,8 @@ func _view(title: String, box: Rect2, b: Rect2, s: float, hulls: Array, dim_x: S
 					fill = Color(1.0, 0.45, 0.35, 0.12)
 				"engine":
 					fill = Color(1, 1, 1, 0.09)
-			draw_colored_polygon(poly, fill)
+			if not Geometry2D.triangulate_polygon(poly).is_empty():   # yandan bakılan ince kanat: düz çizgi
+				draw_colored_polygon(poly, fill)
 			poly.append(poly[0])
 			draw_polyline(poly, INK, 1.2, true)
 	var r := Rect2(origin + b.position * s, w)

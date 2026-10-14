@@ -243,6 +243,10 @@ func _ready() -> void:
 		var et := preload("res://tests/engine_test.gd").new()
 		et.main = self
 		add_child.call_deferred(et)
+	if Game.args.has("transtest"):
+		var tt: Node = load("res://tests/transition_test.gd").new()
+		tt.main = self
+		add_child.call_deferred(tt)
 	if Game.args.has("killtest"):
 		var kt: Node = load("res://tests/kill_test.gd").new()
 		kt.main = self
