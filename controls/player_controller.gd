@@ -24,6 +24,8 @@ var _prev_g := 1.0
 var _gdot := 0.0
 var _rate_cap := 1.0
 var _auto_trim := 0.0      ## SAS açıkken eller serbest: burnun duruşunu tutan yavaş trim
+var _roll_trim := 0.0      ## … kanatları düz tutan (pervane torku) yatış trimi
+var _yaw_trim := 0.0       ## … burnu yönde tutan sapma trimi
 var _prev_wx := 0.0
 var _wdot := 0.0
 
@@ -153,10 +155,21 @@ func _physics_process(delta: float) -> void:
 			pitch = clampf(pitch + _auto_trim, -1.0, 1.0)
 		if vessel.airspeed() < 40.0:
 			_auto_trim = move_toward(_auto_trim, 0.0, delta)
+		# yatış / sapma: sönüm + otomatik trim (dönme hızının integrali: eller serbestken kanatlar
+		# ve burun olduğu yerde kalır). Tek pervaneli uçakta motor torku sürekli sola yatırıyordu;
+		# yalnız sönüm buna karşı koyamıyordu (kalkıştan 6 sn sonra 30° yatık)
+		var trim_on := not autopilot.any_active() and vessel.airspeed() > 5.0
 		if absf(yaw) < 0.05:
-			yaw = clampf(w.y * g_sas, -1.0, 1.0)
+			if trim_on:
+				_yaw_trim = clampf(_yaw_trim + w.y * 0.6 * delta, -0.4, 0.4)
+			yaw = clampf(w.y * g_sas + _yaw_trim, -1.0, 1.0)
 		if absf(roll) < 0.05:
-			roll = clampf(w.z * g_sas, -1.0, 1.0)
+			if trim_on:
+				_roll_trim = clampf(_roll_trim + w.z * 0.9 * delta, -0.5, 0.5)
+			roll = clampf(w.z * g_sas + _roll_trim, -1.0, 1.0)
+		if vessel.airspeed() < 5.0:
+			_roll_trim = move_toward(_roll_trim, 0.0, delta)
+			_yaw_trim = move_toward(_yaw_trim, 0.0, delta)
 
 	if autopilot.any_active():
 		var ap := autopilot.compute(vessel)
@@ -424,6 +437,8 @@ func _fcs() -> String:
 		_aoa_lim = _stall_deg * 0.9
 		_g_per_q = 6.0e-4   # yeni uçak: G kazancı baştan öğrenilir
 		_auto_trim = 0.0
+		_roll_trim = 0.0
+		_yaw_trim = 0.0
 		_auth = 1.0
 		_auth_neg = 1.0
 		vessel.system_message.emit("Kumanda sistemi: " + FCS_NAMES.get(kind, kind))

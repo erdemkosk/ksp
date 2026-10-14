@@ -320,6 +320,19 @@ func _ctl_test() -> void:
 		Input.parse_input_event(e)
 		await get_tree().create_timer(0.6).timeout
 		report.call("%s basılı" % OS.get_keycode_string(key))
+		if Game.args.has("shotdir") and key == KEY_DOWN:
+			for p in _preview.parts:
+				if p.part_id == "elevon" and p.position.x > 0.0:
+					_target = _craft_root.global_transform * p.position
+					break
+			_yaw = deg_to_rad(70.0)
+			_pitch = deg_to_rad(4.0)
+			_dist = 5.0
+			_update_camera()
+			for i in 3:
+				await get_tree().process_frame
+			await RenderingServer.frame_post_draw
+			get_viewport().get_texture().get_image().save_png(String(Game.args["shotdir"]) + "/ctl_deflect.png")
 		e = e.duplicate()
 		e.pressed = false
 		Input.parse_input_event(e)
@@ -995,9 +1008,7 @@ func _sweep_surface(m: ControlSurfaceModule) -> void:
 		while is_instance_valid(m) and absf(m.deflection - goal) > 0.001:
 			var dt := get_process_delta_time()
 			m.deflection = move_toward(m.deflection, goal, m.rate * dt)
-			var vis := m.part.get_node_or_null("Visual") as Node3D
-			if vis:
-				vis.rotation.x = m.deflection
+			m.apply_visual()
 			await get_tree().process_frame
 		await get_tree().create_timer(0.15).timeout
 
@@ -1777,7 +1788,8 @@ func _part_under_mouse() -> Part:
 func _update_hover() -> void:
 	var part: Part = _part_under_mouse() if _selected.is_empty() else null
 	if part != _hover_part:
-		_set_overlay(_hover_part, null)
+		if is_instance_valid(_hover_part):   # uçak yeniden kurulunca eski parça silinmiş olabilir
+			_set_overlay(_hover_part, null)
 		_set_overlay(part, _hover_mat)
 		_hover_part = part
 	if part != null:

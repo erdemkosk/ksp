@@ -45,9 +45,26 @@ func physics_tick(delta: float) -> void:
 	var hyd := vessel.hydraulics
 	if not jammed:
 		deflection = move_toward(deflection, command * max_deflection * lerpf(0.35, 1.0, hyd), rate * lerpf(0.15, 1.0, hyd) * delta)
-	if _visual:
-		_visual.rotation.x = deflection
+	apply_visual()
 	super.physics_tick(delta)
+
+
+var _base := Transform3D.IDENTITY
+var _base_ok := false
+
+
+## Yüzeyi ön kenarındaki menteşe çevresinde döndür (eskiden ortasından dönüyordu: sapınca ön
+## kenar kanadın üstüne fırlıyor, yüzey kanattan kopuk bir blok gibi görünüyordu).
+func apply_visual() -> void:
+	if _visual == null:
+		_visual = part.get_node_or_null("Visual")
+		if _visual == null:
+			return
+	if not _base_ok:
+		_base = _visual.transform   # sapmasız duruş (ölçek / ayna dahil)
+		_base_ok = true
+	var hinge := Vector3(0.0, 0.0, -part.size.z * 0.5)
+	_visual.transform = Transform3D(Basis(Vector3.RIGHT, deflection), hinge) * Transform3D(Basis.IDENTITY, -hinge) * _base
 
 
 ## Hangar kumanda testi: fizik çalışmadan yüzeyi istenen komuta (yunus, -sapma, -yatış) göre
@@ -58,8 +75,7 @@ func preview_tick(desired: Vector3, delta: float) -> void:
 	_compute_weights()
 	var command := clampf(axis_weights.dot(desired) * authority, -1.0, 1.0)
 	deflection = move_toward(deflection, command * max_deflection, rate * delta)
-	if _visual:
-		_visual.rotation.x = deflection
+	apply_visual()
 
 
 func on_damaged(amount: float) -> void:
@@ -79,8 +95,10 @@ func _compute_weights() -> void:
 	if m < 0.001:
 		axis_weights = Vector3.ZERO
 		return
-	axis_weights = t / m
+	# her eksen kendi payını alır (KSP gibi): eskiden en güçlü eksene göre ölçekleniyordu — kanat
+	# ucundaki elevon yatışta tam, yunuslamada yalnız %30-40 sapıyordu ("dümen yetmiyor").
+	# Belirgin katkı (en güçlünün %40'ı) tam sapma; daha zayıf katkı orantılı; %15 altı hiç.
 	for i in 3:
-		if absf(axis_weights[i]) < 0.15:
-			axis_weights[i] = 0.0
+		var k := absf(t[i]) / m
+		axis_weights[i] = 0.0 if k < 0.15 else signf(t[i]) * clampf(k * 2.5, 0.0, 1.0)
 	axis_weights *= axis_mask
