@@ -2489,13 +2489,41 @@ func _update_stats() -> void:
 			w.call("Yatış kumandası yok — kanada kanatçık / elevon ekle", "control")
 		if auth.y < 0.1:
 			w.call("Sapma kumandası yok — dikey kuyruğa dümen ekle", "control")
+		# yunuslama gücü: tam çubukta kuyruğun momenti kanadın geri getiren momentini ne kadar
+		# yenebilir → ulaşılabilen ek hücum açısı ≈ Σ(S·δ·pay·kol) / (S_kanat · kararlılık payı).
+		# Pay büyükse (uçak çok kararlı) ya da kuyruk küçük / ağırlık merkezine yakınsa küçük kalır.
+		var pitch_pow := 0.0
+		var eff_sum := 0.0
+		var main_z2 := 0.0
+		var n_main2 := 0
+		for m in v.modules:
+			if m is LandingGearModule and not m.steerable:
+				main_z2 += m.part.position.z
+				n_main2 += 1
+		main_z2 = main_z2 / n_main2 if n_main2 > 0 else com.z
+		var rot_pow := 0.0
+		for m in v.modules:
+			if m is ControlSurfaceModule and absf(m.axis_weights.x) > 0.0:
+				var eff: float = m.area * m.max_deflection * absf(m.axis_weights.x) * absf(m.authority) * 0.6
+				pitch_pow += eff * absf(m.part.position.z - com.z)
+				eff_sum += eff
+				rot_pow += eff * m.lift_slope * maxf(m.part.position.z - main_z2, 0.0)
+		_pitch_reach = -1.0
+		if col_area > 0.0 and pitch_pow > 0.0:
+			var arm := pitch_pow / maxf(eff_sum, 0.001)   # etkiyle ağırlıklı ortalama kol
+			_pitch_reach = rad_to_deg(pitch_pow / (col_area * maxf(margin, 0.15))) * 2.0   # ×2: uçuş testine göre ayar (Kartal-1 ~12°)
+			if _pitch_reach < 4.5:   # ağır saldırı uçakları ~5° (bilerek hantal); Kartal ~14°
+				var why := ("uçak çok kararlı (kararlılık payı %.1f m) — ağırlığı geri al ya da kanadı öne kaydır" % margin) if margin > 1.2 \
+					else ("kuyruk yüzeyi küçük ya da ağırlık merkezine yakın (kol %.1f m) — stabilatörü büyüt ya da daha geriye al" % arm)
+				w.call("İrtifa dümeni zayıf: tam çubukta en çok ~%d° hücum açısı — %s" % [_pitch_reach, why], "control")
+			# (kalkışta burun kalkışı tahmini kaldırıldı: hazır uçaklarda kalkış testleriyle tutmadı)
 	if v.bombs_left(true) > 0 and v.targeting_pod() == null:
 		w.call("Lazer bomba var ama hedefleme podu yok — güdümsüz düşer", "pod")
 	if v.radar_missiles_left() > 0 and v.radar() == null:
 		w.call("Radar füzesi var ama radar yok — atılamaz", "radar")
 	_warn_count = warn_kinds.size()   # hafif uyarılar (kararlılık payı az) mührü bozmaz
 	if Game.args.has("printwarn"):
-		print("WARN %s: %s" % [craft.get("name", "?"), " | ".join(warns)])
+		print("WARN %s: dümen ~%d° | %s" % [craft.get("name", "?"), _pitch_reach, " | ".join(warns)])
 	_warn.text = "\n".join(warns) if not warns.is_empty() else "Uçuşa hazır ✓"
 	_warn.add_theme_color_override("default_color", Color(1.0, 0.55, 0.45) if not warns.is_empty() else Color(0.45, 1.0, 0.6))
 	_warn_markers(PackedStringArray(warn_kinds))
@@ -2530,6 +2558,7 @@ func _save() -> void:
 
 
 var _warn_count := 0          ## son _update_stats'taki uyarı sayısı (mühür ve çizim)
+var _pitch_reach := -1.0      ## tam çubukta ulaşılabilen ek hücum açısı (°, tahmin; -1 = bilinmiyor)
 var _blueprint_layer: CanvasLayer
 
 
