@@ -13,7 +13,8 @@ const START_MONEY := 25000
 const STARTER_PARTS := ["cockpit_mk1", "cockpit_civil", "nose_cone", "radar_nose", "tank_long", "tank_short",
 	"wing_main", "wing_small", "wing_straight", "elevon", "stabilator", "fin_vertical", "rudder",
 	"gear_main", "gear_nose", "jet_engine", "prop_engine", "gun_pod", "missile_rail", "flare_pod",
-	"passenger_cabin", "drag_chute", "airbrake", "pylon", "tail_cone"]
+	"passenger_cabin", "drag_chute", "airbrake", "pylon", "tail_cone",
+	"gear_main_low", "gear_main_tall", "gear_nose_low", "gear_nose_tall"]
 const MISSIONS_FOR_LEVEL := {1: 0, 2: 2, 3: 5}
 
 signal changed
@@ -43,9 +44,9 @@ var salvage := {}
 
 func _ready() -> void:
 	_load()
-	if unlocked.is_empty():
-		for id in STARTER_PARTS:
-			unlocked[id] = true
+	# başlangıç parçaları her zaman açık (sonradan eklenenler eski kayıtlarda da)
+	for id in STARTER_PARTS:
+		unlocked[id] = true
 	if front.is_empty():
 		Front.new_campaign()
 

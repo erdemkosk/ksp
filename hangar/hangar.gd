@@ -2304,6 +2304,44 @@ func _update_stats() -> void:
 				behind = true
 		if not behind:
 			w.call("Bütün takımlar ağırlık merkezinin önünde — uçak kuyruğu üstüne oturur", "gear")
+		# yerden yükseklik: tekerlekler yükte ~0.25 m sıkışır; gövde / motor / yük yere değmesin.
+		# Değerse pistte sürtünür, hasar alır (hidrolik sızıntı buradan çıkıyordu)
+		var wheel_low := INF
+		var main_z := 0.0
+		var n_main := 0
+		for m in v.modules:
+			if m is LandingGearModule:
+				var gs := float(m.part.def.get("_scale", 1.0))
+				wheel_low = minf(wheel_low, m.part.position.y - (m.rest_length + m.wheel_radius) * gs)
+				if not m.steerable:
+					main_z += m.part.position.z
+					n_main += 1
+		if wheel_low < INF:
+			main_z /= maxf(n_main, 1)
+			var body_low := INF
+			var strike := ""
+			for p in v.parts:
+				if p.modules.any(func(mm: PartModule) -> bool: return mm is LandingGearModule):
+					continue
+				var bb := p.local_aabb(0.0)
+				body_low = minf(body_low, bb.position.y)
+				# kalkışta ~8° burun kalkınca ana takımın arkası alçalır. Gövde parçasında gerçek uç
+				# yarıçapları (daralan kuyruk, yukarı kalkık rampa), diğerlerinde kutunun arka alt köşesi
+				var pts: Array[Vector2] = []   # (z, alt y)
+				var ends := VesselBuilder._body_ends(p)
+				if not ends.is_empty():
+					pts.append(Vector2(ends["zf"], p.position.y - float(ends["rf"])))
+					pts.append(Vector2(ends["zr"], p.position.y - float(ends["rr"])))
+				else:
+					pts.append(Vector2(bb.end.z, bb.position.y))
+				for q in pts:
+					if q.x > main_z and q.y - wheel_low - (q.x - main_z) * tan(deg_to_rad(8.0)) < 0.05:
+						strike = p.title
+			var clearance := body_low - wheel_low
+			if clearance < 0.3:
+				w.call("Takımlar kısa: gövde yere %.2f m kalıyor, pistte sürtünür ve hasar alır — uzun takım seç" % maxf(clearance, 0.0), "gear")
+			elif strike != "":
+				w.call("Kalkışta burun kalkınca %s piste vurur — ana takımı geri al ya da uzun takım seç" % strike, "gear")
 	# kumanda yetkisi: yunuslama / yatış / sapmaya bakan yüzey (ya da TVC) var mı
 	var auth := Vector3.ZERO
 	for m in v.modules:
@@ -2323,6 +2361,8 @@ func _update_stats() -> void:
 	if v.radar_missiles_left() > 0 and v.radar() == null:
 		w.call("Radar füzesi var ama radar yok — atılamaz", "radar")
 	_warn_count = warn_kinds.size()   # hafif uyarılar (kararlılık payı az) mührü bozmaz
+	if Game.args.has("printwarn"):
+		print("WARN %s: %s" % [craft.get("name", "?"), " | ".join(warns)])
 	_warn.text = "\n".join(warns) if not warns.is_empty() else "Uçuşa hazır ✓"
 	_warn.add_theme_color_override("default_color", Color(1.0, 0.55, 0.45) if not warns.is_empty() else Color(0.45, 1.0, 0.6))
 	_warn_markers(PackedStringArray(warn_kinds))

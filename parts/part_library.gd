@@ -180,6 +180,15 @@ static func _register_all() -> void:
 	_defs["jet_engine"]["strength_kn"] = 300.0   # kendi ataleti + afterburner itkisi
 	_defs["gear_nose"] = _gear("Burun İniş Takımı", 70.0, 0.28, 60000.0, 8000.0, true)
 	_defs["gear_nose"]["strength_kn"] = 18.0
+	# boylar: alçak gövdeli küçük uçağa kısa, motoru / kuyruğu yere yakın büyük uçağa uzun takım
+	_defs["gear_main_low"] = _gear("Kısa Ana Takım", 90.0, 0.3, 100000.0, 14000.0, false, 0.8)
+	_defs["gear_main_low"]["strength_kn"] = 26.0
+	_defs["gear_main_tall"] = _gear("Uzun Ana Takım", 170.0, 0.4, 150000.0, 20000.0, false, 1.8)
+	_defs["gear_main_tall"]["strength_kn"] = 36.0
+	_defs["gear_nose_low"] = _gear("Kısa Burun Takımı", 55.0, 0.24, 50000.0, 7000.0, true, 0.8)
+	_defs["gear_nose_low"]["strength_kn"] = 15.0
+	_defs["gear_nose_tall"] = _gear("Uzun Burun Takımı", 100.0, 0.3, 80000.0, 10000.0, true, 1.7)
+	_defs["gear_nose_tall"]["strength_kn"] = 20.0
 
 	# --- motorlar: J-70'in ölçeklenmiş kardeşleri
 	_defs["jet_engine_small"] = _engine_variant("J-40 Hafif Motor", 0.75, 520.0, 38000.0, 1.0, 0.8, 1800)
@@ -584,15 +593,22 @@ static func _control_surface(title: String, size: Vector3, mass: float, area: fl
 	}
 
 
-static func _gear(title: String, mass: float, wheel_r: float, spring: float, damper: float, steerable: bool) -> Dictionary:
-	var rest := 1.2
+static func _gear(title: String, mass: float, wheel_r: float, spring: float, damper: float, steerable: bool, rest := 1.2) -> Dictionary:
+	var tw := clampf(wheel_r * 0.7, 0.18, 0.3)     # lastik genişliği
 	return {
 		"title": title, "category": "iniş takımı", "mass": mass, "hp": 80.0, "cost": 400,
 		"size": Vector3(0.4, rest, 0.6),
 		"visuals": [
-			{"type": "cyl", "name": "Strut", "axis": "y", "r": 0.07, "len": rest, "pos": Vector3(0, -rest * 0.5, 0), "mat": "metal"},
-			{"type": "cyl", "name": "Wheel", "axis": "x", "r": wheel_r, "len": 0.24, "pos": Vector3(0, -rest, 0), "mat": "rubber"},
-			{"type": "cyl", "parent": "Wheel", "axis": "y", "r": wheel_r * 0.55, "len": 0.26, "mat": "metal"},
+			# amortisör gövdesi (sabit, kalın, koyu) + içinden çıkan krom piston ("Strut": sıkışınca kısalır)
+			{"type": "cyl", "axis": "y", "r": 0.095, "len": rest * 0.5, "pos": Vector3(0, -rest * 0.25, 0), "mat": "paint_dark"},
+			{"type": "cyl", "axis": "y", "r": 0.11, "len": 0.06, "pos": Vector3(0, -rest * 0.5, 0), "mat": "dark"},
+			{"type": "cyl", "name": "Strut", "axis": "y", "r": 0.06, "len": rest, "pos": Vector3(0, -rest * 0.5, 0), "mat": "metal"},
+			# tekerlek: lastik, jant, göbek; iki yanda çatal ("Wheel" çerçevesi: dünya (wx,wy,0) → (wy,-wx,0))
+			{"type": "cyl", "name": "Wheel", "axis": "x", "r": wheel_r, "len": tw, "pos": Vector3(0, -rest, 0), "mat": "rubber"},
+			{"type": "cyl", "parent": "Wheel", "axis": "y", "r": wheel_r * 0.62, "len": tw + 0.02, "mat": "metal"},
+			{"type": "cyl", "parent": "Wheel", "axis": "y", "r": wheel_r * 0.22, "len": tw + 0.08, "mat": "dark"},
+			{"type": "box", "parent": "Wheel", "size": Vector3(wheel_r * 1.15, 0.035, 0.12), "pos": Vector3(wheel_r * 0.5, -(tw * 0.5 + 0.03), 0), "mat": "metal"},
+			{"type": "box", "parent": "Wheel", "size": Vector3(wheel_r * 1.15, 0.035, 0.12), "pos": Vector3(wheel_r * 0.5, tw * 0.5 + 0.03, 0), "mat": "metal"},
 		],
 		"colliders": [],
 		"modules": [{"type": "landing_gear", "rest_length": rest, "wheel_radius": wheel_r, "spring": spring,

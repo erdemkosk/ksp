@@ -859,7 +859,8 @@ static func _body_ends(p: Part) -> Dictionary:
 	var rf := 0.0
 	var rr := 0.0
 	for vis: Dictionary in p.def.get("visuals", []):
-		if vis.get("type", "") != "lathe" or vis.has("arc_from") or vis.has("parent") or vis.get("mat", "") in ["interior", "glass", "dark"]:
+		# yalnız gövde kabuğu: alev / ısı dalgası (motorun 7 m arkasına uzanır), cam, iç yüzey sayılmaz
+		if vis.get("type", "") != "lathe" or vis.has("arc_from") or vis.has("parent") or not (String(vis.get("mat", "paint")) in ["paint", "paint_dark", "metal"]):
 			continue
 		var off: Vector3 = vis.get("pos", Vector3.ZERO)
 		for pt: Vector2 in vis.get("profile", []):

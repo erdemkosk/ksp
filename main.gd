@@ -243,6 +243,10 @@ func _ready() -> void:
 		var et := preload("res://tests/engine_test.gd").new()
 		et.main = self
 		add_child.call_deferred(et)
+	if Game.args.has("spawntest"):
+		var st: Node = load("res://tests/spawn_test.gd").new()
+		st.main = self
+		add_child.call_deferred(st)
 	if Game.args.has("transtest"):
 		var tt: Node = load("res://tests/transition_test.gd").new()
 		tt.main = self
