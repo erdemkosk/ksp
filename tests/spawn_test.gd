@@ -17,6 +17,8 @@ func _ready() -> void:
 		for p in v.parts:
 			if p.health_ratio() < 0.999:
 				hurt += 1
+		var upv := Planet.up_at(v.global_position)
+		print("SPAWN t+%.1f %s | burun %+.1f° |" % [t, v.craft_name, rad_to_deg(asin(clampf(v.forward().dot(upv), -1.0, 1.0)))])
 		print("SPAWN t+%.1f %s | yerden %.2f m | hasarlı parça %d | arızalar %s | takımlar: %s" % [t, v.craft_name, v.radar_altitude(), hurt, v.failures.values(), "; ".join(gears)])
 	var dir := str(Game.args.get("spawntest", ""))
 	if dir != "" and dir != "true":

@@ -605,6 +605,14 @@ func gear_deploy() -> float:
 	return total / n if n > 0 else 0.0
 
 
+## Herhangi bir tekerlek yere değiyor mu.
+func wheels_on_ground() -> bool:
+	for module in modules:
+		if module is LandingGearModule and module.grounded:
+			return true
+	return false
+
+
 ## Takımları animasyonsuz ayarla (doğma anı için).
 func set_gear_instant(down: bool) -> void:
 	gear_down = down
@@ -1090,7 +1098,9 @@ func update_hydraulics(delta: float) -> void:
 				var obj := instance_from_id(int(k.substr(pre.length())))
 				if not is_instance_valid(obj) or not obj in parts:
 					failures.erase(k)
-	if hydraulics < 0.5 and (airspeed() > 40.0 or radar_altitude() > 5.0):
+	# yerde (tekerlek değiyor) motor kapalıyken basınç düşük olması arıza değil: uzun bacaklı büyük
+	# uçakta ağırlık merkezi yerden 5 m'yi geçiyor, "havada" sanılıp pistte uyarı veriyordu
+	if hydraulics < 0.5 and (airspeed() > 40.0 or (radar_altitude() > 5.0 and not wheels_on_ground())):
 		failures["hydlow"] = "HİDROLİK BASINÇ DÜŞÜK %d%%" % (hydraulics * 100.0)
 	else:
 		failures.erase("hydlow")

@@ -158,7 +158,9 @@ func _physics_process(delta: float) -> void:
 		# yatış / sapma: sönüm + otomatik trim (dönme hızının integrali: eller serbestken kanatlar
 		# ve burun olduğu yerde kalır). Tek pervaneli uçakta motor torku sürekli sola yatırıyordu;
 		# yalnız sönüm buna karşı koyamıyordu (kalkıştan 6 sn sonra 30° yatık)
-		var trim_on := not autopilot.any_active() and vessel.airspeed() > 5.0
+		# yalnız havada: yerde sapma trimi burun tekerini çevirip dar izli (gövdeye takılı) takımda
+		# uçağı yana yatırıyordu
+		var trim_on := not autopilot.any_active() and vessel.airspeed() > 5.0 and vessel.radar_altitude() > 4.0
 		if absf(yaw) < 0.05:
 			if trim_on:
 				_yaw_trim = clampf(_yaw_trim + w.y * 0.6 * delta, -0.4, 0.4)
@@ -167,7 +169,7 @@ func _physics_process(delta: float) -> void:
 			if trim_on:
 				_roll_trim = clampf(_roll_trim + w.z * 0.9 * delta, -0.5, 0.5)
 			roll = clampf(w.z * g_sas + _roll_trim, -1.0, 1.0)
-		if vessel.airspeed() < 5.0:
+		if vessel.radar_altitude() <= 4.0:
 			_roll_trim = move_toward(_roll_trim, 0.0, delta)
 			_yaw_trim = move_toward(_yaw_trim, 0.0, delta)
 

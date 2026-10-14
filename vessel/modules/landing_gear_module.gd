@@ -23,8 +23,9 @@ const FOLD_DEG := 88.0
 
 ## Açık takım hız sınırı (m/s; gerçekte VLE): üstünde takım zorlanır, hasar alır, sürerse kopar.
 ## Açılıp kapanırken (kapaklar açık, dikme yolda) sınır %15 daha düşük. Ağır takımlar daha hassas.
-var max_speed := 140.0
+var max_speed := 160.0
 var _over_warned := false
+var _over_t := 0.0
 
 var _visual: Node3D
 var _strut: Node3D
@@ -49,6 +50,13 @@ func on_attached() -> void:
 
 
 func physics_tick(delta: float) -> void:
+	# yerdeyken takım toplanmaz (gerçek uçaklardaki tekerlek-yük kilidi): pistte yanlışlıkla G'ye
+	# basınca uçak göbeğine oturuyordu
+	if not vessel.gear_down and grounded:
+		vessel.gear_down = true
+		if Time.get_ticks_msec() - int(vessel.get_meta("wow_msg", 0)) > 2000:
+			vessel.set_meta("wow_msg", Time.get_ticks_msec())
+			vessel.system_message.emit("Yerdeyken takım toplanmaz — havalanınca topla")
 	deploy = move_toward(deploy, 1.0 if vessel.gear_down else 0.0, DEPLOY_RATE * delta)
 	grounded = false
 	compression = 0.0
@@ -74,15 +82,19 @@ func _overspeed(delta: float) -> void:
 			vessel.failures.erase(key)
 		if spd < lim * 0.9:
 			_over_warned = false
+		_over_t = maxf(_over_t - delta, 0.0)
 		return
 	var over := (spd - lim) / lim
-	vessel.failures[key] = "TAKIM HIZ SINIRI"
+	vessel.failures[key] = "TAKIM HIZ SINIRI — TOPLA"
 	if not _over_warned:
 		_over_warned = true
-		vessel.system_message.emit("TAKIM HIZ SINIRI! %d km/sa üstünde açık takım hasar alır — yavaşla ya da topla" % (lim * 3.6))
+		vessel.system_message.emit("TAKIM HIZ SINIRI! %d km/sa üstü: takımı topla (G) ya da yavaşla" % (lim * 3.6))
 		Sfx.play_at("impact_metal_2.ogg", part.global_position, -4.0, 0.7, 600.0)
-	# %10 aşımda ~4 sn, %25 aşımda ~2 sn dayanır
-	vessel.damage_part(part, part.max_hp * (0.08 + over * 1.5) * delta)
+	# toplamaya fırsat: ilk 3 sn yalnız uyarı (titreşim sesi), sonra hasar başlar;
+	# %10 aşımda ~10 sn, %40 aşımda ~3 sn daha dayanır
+	_over_t += delta
+	if _over_t > 3.0:
+		vessel.damage_part(part, part.max_hp * (0.04 + over * 0.6) * delta)
 
 
 func _simulate() -> void:

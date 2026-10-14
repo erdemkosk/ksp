@@ -2471,6 +2471,15 @@ func _update_stats() -> void:
 					if q.x > main_z and q.y - wheel_low - (q.x - main_z) * tan(deg_to_rad(8.0)) < 0.05:
 						strike = p.title
 			var clearance := body_low - wheel_low
+			# takım izi: ana takımlar ne kadar dışarıda, ağırlık merkezi ne kadar yüksekte → yana devrilme
+			# açısı. Dar izde (gövde altına yakın takımlar) yan rüzgâr / dönüş uçağı pistte yatırır
+			var half_track := 0.0
+			for m in v.modules:
+				if m is LandingGearModule and not m.steerable:
+					half_track = maxf(half_track, absf(m.part.position.x))
+			_tip_deg = rad_to_deg(atan2(half_track, maxf(com.y - wheel_low, 0.1)))
+			if half_track > 0.0 and _tip_deg < 16.0:
+				w.call("Takım izi dar (%.1f m): yan rüzgârda ve dönüşte pistte yana yatar / devrilir — ana takımları dışarı (kanat altına) al" % (half_track * 2.0), "gear")
 			if clearance < 0.3:
 				w.call("Takımlar kısa: gövde yere %.2f m kalıyor, pistte sürtünür ve hasar alır — uzun takım seç" % maxf(clearance, 0.0), "gear")
 			elif strike != "":
@@ -2523,7 +2532,7 @@ func _update_stats() -> void:
 		w.call("Radar füzesi var ama radar yok — atılamaz", "radar")
 	_warn_count = warn_kinds.size()   # hafif uyarılar (kararlılık payı az) mührü bozmaz
 	if Game.args.has("printwarn"):
-		print("WARN %s: dümen ~%d° | %s" % [craft.get("name", "?"), _pitch_reach, " | ".join(warns)])
+		print("WARN %s: dümen ~%d° devrilme %d° | %s" % [craft.get("name", "?"), _pitch_reach, _tip_deg, " | ".join(warns)])
 	_warn.text = "\n".join(warns) if not warns.is_empty() else "Uçuşa hazır ✓"
 	_warn.add_theme_color_override("default_color", Color(1.0, 0.55, 0.45) if not warns.is_empty() else Color(0.45, 1.0, 0.6))
 	_warn_markers(PackedStringArray(warn_kinds))
@@ -2559,6 +2568,7 @@ func _save() -> void:
 
 var _warn_count := 0          ## son _update_stats'taki uyarı sayısı (mühür ve çizim)
 var _pitch_reach := -1.0      ## tam çubukta ulaşılabilen ek hücum açısı (°, tahmin; -1 = bilinmiyor)
+var _tip_deg := -1.0          ## pistte yana devrilme açısı (°): atan(yarım iz / ağırlık merkezi yüksekliği)
 var _blueprint_layer: CanvasLayer
 
 

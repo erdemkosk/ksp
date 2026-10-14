@@ -23,6 +23,6 @@
 		{"part": "stabilator",       "pos": [2.35, 0.1, 22.4], "mirror": true, "scale": 1.5},
 
 		{"part": "gear_nose_heavy",  "pos": [0, -0.9, -1.35], "scale": 1.4},
-		{"part": "gear_main_heavy",  "pos": [0.85, -0.9, 12.1], "mirror": true, "scale": 1.25}
+		{"part": "gear_main_heavy",  "pos": [2.3, -0.9, 13.2], "mirror": true, "scale": 1.25}
 	]
 }
