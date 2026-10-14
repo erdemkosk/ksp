@@ -38,7 +38,7 @@ const KEY_BINDINGS := {
 	"spawn_enemy": [KEY_F7],
 	"hangar": [KEY_J],
 	"flare": [KEY_O],
-	"chaff": [KEY_SEMICOLON],       # Türkçe klavyede Ş
+	"chaff": [KEY_SEMICOLON],       # Türkçe klavyede Ş; asıl hızlı tuş eylem panelinde 5
 	"cm_auto": [KEY_APOSTROPHE],    # Türkçe klavyede İ: karşı tedbir otomatik programı
 	"bombsight": [KEY_BRACKETLEFT], # Türkçe klavyede Ğ: bombacı kamerası
 	"mouse_flight": [KEY_Y],

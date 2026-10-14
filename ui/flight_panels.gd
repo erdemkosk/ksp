@@ -9,7 +9,7 @@ const HELP := [
 		["K", "kanopi"], ["F", "dışarı çık / uçağa bin"], ["R / H", "piste dön / havada başla"]]],
 	["FARE / PANEL", [["TAB", "fareyle uçuş aç / kapa (isteğe bağlı)"], ["N", "paneller (savaş, kumanda, pencereler)"], ["Alt (basılı)", "geçici imleç"], ["Esc", "duraklat"]]],
 	["EYLEMLER", [["1-9", "eylem paneli, sabit tuşlar: 1 takım · 2 motor · 3 kanopi · 4 fişek · 5 hava freni · 6 paraşüt · 7 JATO · 8 pod · 9 pilot indirsin · 0 yakıt boşalt"], ["⌫ ⌫", "FIRLATMA KOLTUĞU"], ["F2", "telsiz: kalkış / iniş izni, yön, hava, mayday"], ["M", "harita"], ["F9 / F10", "kaydet / kayıttan devam"], ["F8", "hedefleme podu (numpad: kaydır 8/2/4/6, +/- yakın, 5 kilit, 0 mod)"], ["F11", "tam ekran"], ["Enter", "inince uçuşu / görevi bitir"]]],
-	["SAVAŞ", [["Space", "ateş (füze kilitsiz de atılır)"], ["V", "silah seç (top / füze / bomba)"], ["F4 / tık", "radar hedefi seç"], ["O", "flare at"], ["F7", "saldırgan düşman"], ["J", "hangar"]]],
+	["SAVAŞ", [["Space", "ateş (füze kilitsiz de atılır)"], ["V", "silah seç (top / füze / bomba)"], ["F4 / tık", "radar hedefi seç"], ["O / 4", "flare at"], ["5", "chaff at"], ["F7", "saldırgan düşman"], ["J", "hangar"]]],
 	["KAMERA", [["C", "takip / kokpit / serbest"], ["Sağ tık + sürükle", "etrafa bak"], ["Sağ tık (parça)", "parça penceresi"], ["Tekerlek", "yakınlaş"],
 		["Orta tık", "bakışı sıfırla"], ["Sol tık (kokpit)", "anahtarları kullan"]]],
 	["DÜNYA", [[", / . / /", "zaman ileri sarma (yavaş / hızlı / normal)"], ["F5 / F6", "hava durumu / saat"], ["F3", "aerodinamik debug"], ["F1", "tuşlar penceresi"]]],

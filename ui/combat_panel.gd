@@ -258,7 +258,7 @@ func _draw() -> void:
 		_draw_wing(Rect2(14, 480, W - 28, 66))
 	else:
 		_draw_structure(Rect2(14, 378, W - 28, 140))
-	_text_c(Vector2(W * 0.5, H - 14), "Space ateş  ·  V silah  ·  O flare  ·  F4 hedef", 11, DIM, _font)
+	_text_c(Vector2(W * 0.5, H - 14), "Space ateş  ·  V silah  ·  4 flare · 5 chaff  ·  F4 hedef", 11, DIM, _font)
 
 
 func _draw_arm(powered: bool) -> void:
@@ -294,7 +294,7 @@ func _draw_flare(powered: bool) -> void:
 	var flash := _press.get("flare", 0.0) as float
 	draw_rect(sq.grow(-6), Color(LIT_AMBER, 0.25 + flash * 0.7) if ok else Color(0.12, 0.12, 0.1))
 	_text_c(sq.get_center() + Vector2(0, 6), "%d" % n, 16, LIT_AMBER if ok else DIM, _bold)
-	_text_c(r.position + Vector2(r.size.x * 0.5, r.size.y - 6), "FLARE (O)", 11, ENGRAVE, _bold)
+	_text_c(r.position + Vector2(r.size.x * 0.5, r.size.y - 6), "FLARE (4)", 11, ENGRAVE, _bold)
 
 
 ## Chaff kartı (mavi sayaç) ve başlıktaki OTO düğmesi.
@@ -311,7 +311,7 @@ func _draw_chaff(powered: bool) -> void:
 	var flash := _press.get("chaff", 0.0) as float
 	draw_rect(sq.grow(-6), Color(blue, 0.22 + flash * 0.7) if ok else Color(0.1, 0.11, 0.13))
 	_text_c(sq.get_center() + Vector2(0, 6), ("%d" % n) if have else "yok", 16 if have else 12, blue if ok else DIM, _bold)
-	_text_c(r.position + Vector2(r.size.x * 0.5, r.size.y - 6), "CHAFF (Ş)", 11, ENGRAVE, _bold)
+	_text_c(r.position + Vector2(r.size.x * 0.5, r.size.y - 6), "CHAFF (5)", 11, ENGRAVE, _bold)
 	var a := _auto_rect()
 	var on := vessel.cm_auto
 	draw_style_box(_box(Color(0.1, 0.3, 0.15, 0.9) if on else Color(0, 0, 0, 0.3), 9, LIT_GREEN if on else Color(1, 1, 1, 0.15)), a)
@@ -461,7 +461,7 @@ func _draw_status(r: Rect2, powered: bool) -> void:
 					col = LIT_GREEN
 	var inc := vessel.incoming_missile()
 	if inc and fmod(_sweep, 0.5) < 0.3:
-		text = "!! RADAR FÜZESİ — CHAFF (Ş), DİK DÖN !!" if inc.is_radar() else "!! IR FÜZE — FLARE AT (O) !!"
+		text = "!! RADAR FÜZESİ — CHAFF (5), DİK DÖN !!" if inc.is_radar() else "!! IR FÜZE — FLARE AT (4) !!"
 		col = RED
 	# uzun mesaj kutuya sığsın: yazı küçülür
 	var fs := 13

@@ -49,7 +49,11 @@ func max_allowed() -> Array:
 	if get_tree().paused:
 		return [0, "duraklatıldı"]
 	if main and main.pilot != null:
-		return [0, "pilot dışarıda"]
+		# paraşütle süzülürken ya da yerde kurtarma beklerken hızlandırılabilir (x10: fizik adımı aynı kalır)
+		var pc: Node = main.pilot
+		if is_instance_valid(pc) and (bool(pc.get("chute_open")) or (pc as CharacterBody3D).is_on_floor()):
+			return [4, "pilot dışarıda: en fazla x10"]
+		return [0, "pilot serbest düşüşte"]
 	var v := _vessel()
 	if v == null:
 		return [0, "uçak yok"]
@@ -137,6 +141,17 @@ func _slot_at(p: Vector2) -> int:
 
 func _process(delta: float) -> void:
 	position = Vector2(get_viewport_rect().size.x - W - 18, 14)
+	# x25 yerde park halinde: uçağı dondur (büyük fizik adımında takım yayları kaydırıyordu)
+	var pv := _vessel()
+	var want := pv != null and level > 4 and pv.parking_brake and pv.radar_altitude() < 5.0
+	if want and _frozen == null:
+		_frozen = pv
+		pv.linear_velocity = Vector3.ZERO
+		pv.angular_velocity = Vector3.ZERO
+		pv.freeze = true
+	elif not want and is_instance_valid(_frozen):
+		_frozen.freeze = false
+		_frozen = null
 	_msg_t = maxf(_msg_t - delta / maxf(Engine.time_scale, 1.0), 0.0)
 	# koşul bozulunca sarmayı düşür
 	if level > 0:
@@ -156,6 +171,7 @@ func _process(delta: float) -> void:
 
 
 var _redraw_t := 0.0
+var _frozen: Vessel
 var _lim_cache := 0
 
 

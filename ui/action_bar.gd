@@ -190,7 +190,7 @@ func _action_items() -> Array[Dictionary]:
 
 ## Her eylemin SABİT numarası: liste duruma göre değişse de (havada "Pilot indirsin" eklenir,
 ## yerde "Uçuşu bitir" çıkar) bir tuş hep aynı işi yapar. Takım hep 1, motor hep 2…
-const SLOTS := ["gear", "engine", "canopy", "flare", "airbrake", "chute", "jato", "pod", "autoland", "chaff", "bombsight"]
+const SLOTS := ["gear", "engine", "canopy", "flare", "chaff", "airbrake", "chute", "pod", "autoland", "jato", "bombsight"]
 
 
 ## Eylem kimliği → tuş numarası. Hangarın EYLEMLER sekmesi (craft["actions"]: [{id, on}])
