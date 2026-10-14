@@ -116,7 +116,10 @@ func _downed(v: Vessel) -> void:
 	if big:
 		trail = Effects.burning_trail()
 		big.add_child(trail)
-	_falling.append({"v": v, "trail": trail})
+	var ids: Array = []
+	for p in v.parts:
+		ids.append(p.part_id)
+	_falling.append({"v": v, "trail": trail, "ids": ids})
 
 
 func _show_banner(title: String, sub: String, col: Color) -> void:
@@ -156,6 +159,11 @@ func _update_falling() -> void:
 			for c in trail.get_children():
 				(c as GPUParticles3D).emitting = false
 		_wreck(pos - up * maxf(ground, 0.0), up)
+		# enkaz yerde: teknisyenler inceler, bilinmeyen bir parçanın Ar-Ge bedeli düşer
+		var msg := Career.salvage_from(f.get("ids", []))
+		if msg != "" and main.get("hud"):
+			main.hud.show_message(msg, 4.0)
+			_show_banner("ENKAZ İNCELENDİ", msg.trim_prefix("ENKAZ İNCELEMESİ: "), Color(0.45, 0.85, 1.0))
 	_falling = keep
 
 

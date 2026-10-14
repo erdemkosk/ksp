@@ -37,6 +37,8 @@ var designs_data := {}
 var campaign := {}
 ## Düşman doktrini: oyuncunun alışkanlıkları (bkz. Doctrine)
 var doctrine := {}
+## Enkazdan tersine mühendislik: parça id → Ar-Ge indirimi (0…0.6), düşürülen düşmanlardan
+var salvage := {}
 
 
 func _ready() -> void:
@@ -58,7 +60,8 @@ func is_unlocked(id: String) -> bool:
 
 ## Ar-Ge bedeli: parça fiyatının 4 katı (bir kez ödenir).
 func unlock_price(id: String) -> int:
-	return int(PartLibrary.get_def(id).get("cost", 500)) * 4
+	var base := int(PartLibrary.get_def(id).get("cost", 500)) * 4
+	return int(base * (1.0 - clampf(float(salvage.get(id, 0.0)), 0.0, 0.6)))
 
 
 func can_unlock(id: String) -> bool:
@@ -173,7 +176,7 @@ func save() -> void:
 	if f:
 		f.store_string(JSON.stringify({"money": money, "unlocked": unlocked.keys(), "completed": completed,
 			"total_earned": total_earned, "flights": flights,
-			"front": front, "day": day, "news": news, "threats": threats, "designs": designs_data, "campaign": campaign, "doctrine": doctrine},"\t"))
+			"front": front, "day": day, "news": news, "threats": threats, "designs": designs_data, "campaign": campaign, "doctrine": doctrine, "salvage": salvage},"\t"))
 
 
 func _load() -> void:
@@ -196,6 +199,8 @@ func _load() -> void:
 		designs_data = d["designs"]
 	if typeof(d.get("doctrine")) == TYPE_DICTIONARY:
 		doctrine = d["doctrine"]
+	if typeof(d.get("salvage")) == TYPE_DICTIONARY:
+		salvage = d["salvage"]
 	if d.has("front"):
 		for k in d["front"]:
 			front[String(k)] = int(d["front"][k])
@@ -227,3 +232,21 @@ func reset() -> void:
 	Front.new_campaign()
 	save()
 	changed.emit()
+
+
+## Düşürülen düşmanın enkazından: oyuncunun henüz açmadığı parçalarından birinin Ar-Ge bedeli
+## %25 düşer (en çok %60). Mesaj satırı döner ("" = öğrenilecek bir şey yok). Test / serbest modda yok.
+func salvage_from(parts: Array) -> String:
+	if sandbox() or Game.test_flight:
+		return ""
+	var cands: Array[String] = []
+	for id: String in parts:
+		if not unlocked.has(id) and float(salvage.get(id, 0.0)) < 0.6 and not cands.has(id):
+			cands.append(id)
+	if cands.is_empty():
+		return ""
+	var id: String = cands[randi() % cands.size()]
+	salvage[id] = minf(float(salvage.get(id, 0.0)) + 0.25, 0.6)
+	save()
+	changed.emit()
+	return "ENKAZ İNCELEMESİ: %s — Ar-Ge bedeli %%%d düştü" % [PartLibrary.get_def(id).get("title", id), float(salvage[id]) * 100.0]
