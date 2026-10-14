@@ -18,6 +18,14 @@ var worst_part := ""
 var worst_stress := 0.0
 var fuel_start := -1.0
 var _was_cstall := {}
+# pilot yorumları için
+var player: PlayerController      ## main yazar (bayılma, G yükü)
+var blackouts := 0
+var gray_time := 0.0              ## G perdesi (gri bölge) süresi
+var gear_overspeed := false
+var start_parts := -1
+var max_aoa := 0.0
+var _was_out := false
 
 
 func _physics_process(delta: float) -> void:
@@ -25,10 +33,22 @@ func _physics_process(delta: float) -> void:
 		return
 	if fuel_start < 0.0:
 		fuel_start = vessel.fuel_amount()
+	if start_parts < 0:
+		start_parts = vessel.parts.size()
 	var airborne := vessel.radar_altitude() > 5.0
 	if not airborne:
 		return
 	airborne_time += delta
+	max_aoa = maxf(max_aoa, vessel.aoa_deg() if vessel.airspeed() > 40.0 else 0.0)
+	if is_instance_valid(player):
+		if player.blackout and not _was_out:
+			blackouts += 1
+		_was_out = player.blackout
+		if player.g_strain > 0.3:
+			gray_time += delta
+	for k: String in vessel.failures:
+		if k.begins_with("gear"):
+			gear_overspeed = true
 	max_g = maxf(max_g, vessel.g_force)
 	min_g = minf(min_g, vessel.g_force)
 	max_mach = maxf(max_mach, vessel.mach())
@@ -52,6 +72,61 @@ func _physics_process(delta: float) -> void:
 		if p.stress > worst_stress:
 			worst_stress = p.stress
 			worst_part = p.title
+
+
+## Pilotun ağzından 1–3 yorum ("PİLOT|ad|söz"): uçuş verisinden, en dikkat çekenler önce.
+## Rapor ekranı bunları alıntı kartı olarak çizer. Aynı durum için birkaç farklı söyleyiş var.
+func pilot_notes(pilot_name: String, kills := 0) -> PackedStringArray:
+	var out := PackedStringArray()
+	if airborne_time < 8.0 or pilot_name == "":
+		return out
+	var cands: Array = []   # [öncelik, söz]
+	var lost := start_parts - (vessel.parts.size() if is_instance_valid(vessel) else 0)
+	if blackouts > 0:
+		cands.append([10, _pick(["Gözüm karardı, kendime geldiğimde yer gökyüzündeydi. O çubuk bu kadar sert olmamalı.",
+			"%d kez bayıldım. Uçak benden çok G çekiyor — sınırlayıcı ister." % blackouts])])
+	elif gray_time > 6.0:
+		cands.append([6, _pick(["Dönüşlerde hep gri perde vardı. Bu uçak pilotu yoruyor.",
+			"G yükü hep sınırdaydı; uzun bir it dalaşında dayanamam."])])
+	if lost > 0:
+		cands.append([9, _pick(["%d parça eksik döndük. Yapıyı güçlendirmezseniz bir dahaki sefere dönemeyiz." % lost,
+			"Havada parça koptu, sesini duydum. Bu uçağa yeniden binmem için onu sağlamlaştırın."])])
+	elif worst_stress > 0.9:
+		cands.append([7, _pick(["%s her sert dönüşte inledi. Bir gün gidecek." % worst_part,
+			"Gıcırtılar yüzünden tam gaz açamadım — %s dayanmıyor." % worst_part])])
+	if gear_overspeed:
+		cands.append([7, _pick(["Takımı hızlı açtım, kapaklar titredi. Takım hız sınırı uyarısını daha belirgin yapın.",
+			"İnişte takım rüzgâra dayanamadı, hızı düşürmeden açmamak lazımmış."])])
+	if stall_time > 3.0:
+		cands.append([6, _pick(["Yavaşta kanat birden bırakıyor, hiç uyarı vermiyor.",
+			"Stall'a girince toparlamak zor. Kanat alanı ya da kuyruk büyümeli."])])
+	if cstalls > 0:
+		cands.append([5, _pick(["Motor yüksek açıda iki kez öksürdü. Alıkları kontrol edin.",
+			"Kompresör patladı — sert manevrada tam gaz verince alık havasız kalıyor."])])
+	if buffet_time > 8.0:
+		cands.append([4, "Kanatlar sürekli titriyordu; ses hızına yakın uçmak rahat değil."])
+	if is_instance_valid(vessel) and fuel_start > 0.0 and vessel.fuel_amount() < fuel_start * 0.08:
+		cands.append([8, _pick(["Yakıt ışığı yanarken indim. Biraz daha uzak bir hedef olsaydı göle inerdik.",
+			"Menzil yetmiyor, tank ekleyin."])])
+	if kills >= 2:
+		cands.append([5, _pick(["%d düşman! Bu uçakla dalaşa girmekten korkmuyorum artık." % kills,
+			"Bu uçak avcı ruhlu — %d düşürdük ve hâlâ cephanem vardı." % kills])])
+	elif kills == 1:
+		cands.append([3, "Bir tane düşürdük. Nişan kolay, uçak sözümü dinliyor."])
+	if max_mach > 1.05:
+		cands.append([2, "Ses duvarını geçtik, kokpitte bir an her şey sustu. Harika bir his."])
+	if cands.is_empty():
+		cands.append([1, _pick(["Sorunsuz bir uçuştu. Bu uçağa güveniyorum.",
+			"Uçak dengeli, eller serbest düz gidiyor. Böyle devam.",
+			"Kumandalar yumuşak, uçak ne istersem yapıyor."])])
+	cands.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
+	for i in mini(cands.size(), 3):
+		out.append("PİLOT|%s|%s" % [pilot_name, cands[i][1]])
+	return out
+
+
+func _pick(options: Array) -> String:
+	return options[randi() % options.size()]
 
 
 ## Rapor satırları (uçuş sonu ekranı).

@@ -9,6 +9,39 @@ var lines: PackedStringArray = []
 var good := true
 
 
+## "PİLOT|ad|söz" → solda kalın çizgi, tırnak içinde söz, altında pilotun adı (alıntı kartı).
+static func _quote(line: String) -> Control:
+	var parts := line.split("|", true, 2)
+	var name := parts[1] if parts.size() > 1 else ""
+	var said := parts[2] if parts.size() > 2 else line
+	var card := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.12, 0.11, 0.08, 0.85)
+	sb.border_color = Color(1.0, 0.8, 0.4, 0.85)
+	sb.border_width_left = 4
+	sb.set_content_margin_all(10)
+	sb.content_margin_left = 16
+	sb.set_corner_radius_all(4)
+	card.add_theme_stylebox_override("panel", sb)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 2)
+	card.add_child(v)
+	var q := Label.new()
+	q.text = "“%s”" % said
+	q.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	q.custom_minimum_size.x = 420
+	q.add_theme_font_size_override("font_size", 16)
+	q.add_theme_color_override("font_color", Color(1.0, 0.93, 0.8))
+	v.add_child(q)
+	var n := Label.new()
+	n.text = "— %s, uçuş sonrası" % name
+	n.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	n.add_theme_font_size_override("font_size", 12)
+	n.add_theme_color_override("font_color", Color(1.0, 0.8, 0.45, 0.8))
+	v.add_child(n)
+	return card
+
+
 static func open(m: Node, title: String, info: PackedStringArray, success := true) -> FlightReport:
 	var r := FlightReport.new()
 	r.main = m
@@ -53,6 +86,9 @@ func _ready() -> void:
 	for l in lines:
 		if l.begins_with("MADALYA") or l.begins_with("TERFİ"):
 			box.add_child(MedalView.report_line(l))   # kurdele / apolet ile vurgulu satır
+			continue
+		if l.begins_with("PİLOT|"):
+			box.add_child(_quote(l))   # pilotun sözü: alıntı kartı
 			continue
 		var lb := Label.new()
 		lb.text = l

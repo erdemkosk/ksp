@@ -560,6 +560,7 @@ func _spawn(xform: Transform3D, velocity: Vector3) -> void:
 		flight_stats = FlightStats.new()
 		add_child(flight_stats)
 	flight_stats.vessel = vessel
+	flight_stats.player = player
 	if not is_instance_valid(stress_fx):
 		stress_fx = StressFx.new()
 		add_child(stress_fx)
@@ -1003,6 +1004,9 @@ func end_flight() -> void:
 		info.append("Görev ödülü: +%d ₺" % mission.money_gain)
 	if is_instance_valid(flight_stats):
 		info.append_array(flight_stats.report())   # tasarım notları: en çok zorlanan parça, stall, yakıt…
+		# pilotun ağzından: tasarımın sonucu bir insanın sesiyle
+		var pname := String(Crew.current().get("name", "")) if not Crew.current().is_empty() else "Test pilotu"
+		info.append_array(flight_stats.pilot_notes(pname, kill_feedback.kills if is_instance_valid(kill_feedback) else 0))
 	info.append_array(Career.front_lines)
 	if Game.test_flight:
 		info.append("TEST UÇUŞU: ödül, kayıp ve cephe değişimi yok.")

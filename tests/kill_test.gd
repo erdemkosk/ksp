@@ -55,4 +55,13 @@ func _ready() -> void:
 		await get_tree().create_timer(2.0).timeout
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png(dir + "/kill_3_wreck.png")
+		# uçuş sonu raporu (pilot yorumları)
+		main.camera.target = main.vessel
+		# kayıtlara yazmadan yalnız rapor ekranı (end_flight yerde ister, close_flight kariyere yazar)
+		var lines: PackedStringArray = main.flight_stats.report()
+		lines.append_array(main.flight_stats.pilot_notes("Astğm. Mert Karaca", kf.kills))
+		FlightReport.open(main, "UÇUŞ TAMAMLANDI", lines, true)
+		await get_tree().create_timer(1.5, true, false, true).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(dir + "/kill_4_report.png")
 	get_tree().quit()
