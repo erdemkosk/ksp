@@ -2213,6 +2213,7 @@ func _update_stats() -> void:
 		w.call("Lazer bomba var ama hedefleme podu yok — güdümsüz düşer", "pod")
 	if v.radar_missiles_left() > 0 and v.radar() == null:
 		w.call("Radar füzesi var ama radar yok — atılamaz", "radar")
+	_warn_count = warn_kinds.size()   # hafif uyarılar (kararlılık payı az) mührü bozmaz
 	_warn.text = "\n".join(warns) if not warns.is_empty() else "Uçuşa hazır ✓"
 	_warn.add_theme_color_override("default_color", Color(1.0, 0.55, 0.45) if not warns.is_empty() else Color(0.45, 1.0, 0.6))
 	_warn_markers(PackedStringArray(warn_kinds))
@@ -2242,6 +2243,63 @@ func _save() -> void:
 	f.store_string(JSON.stringify(craft, "\t"))
 	f.close()
 	_flash("Kaydedildi: %s" % craft["name"])
+	# büro mührü: kusursuz tasarım ONAYLANDI, kusurlu ise TASLAK
+	_stamp_anim("ONAYLANDI" if _warn_count == 0 else "TASLAK", Color(0.35, 0.95, 0.55) if _warn_count == 0 else Color(1.0, 0.75, 0.25))
+
+
+var _warn_count := 0          ## son _update_stats'taki uyarı sayısı (mühür ve çizim)
+var _blueprint_layer: CanvasLayer
+
+
+## Teknik çizim aç / kapa (hangar/blueprint_view.gd). Tık ya da Esc kapatır.
+func _toggle_blueprint() -> void:
+	if is_instance_valid(_blueprint_layer):
+		_blueprint_layer.queue_free()
+		_blueprint_layer = null
+		return
+	_blueprint_layer = CanvasLayer.new()
+	_blueprint_layer.layer = 30
+	add_child(_blueprint_layer)
+	var bp := BlueprintView.new()
+	_blueprint_layer.add_child(bp)
+	var number: String = str((craft.get("paint", {}) as Dictionary).get("number", "—"))
+	bp.set_vessel(_preview, {"name": _name_edit.text.strip_edges(), "warns": _warn_count, "number": number})
+	bp.gui_input.connect(func(e: InputEvent) -> void:
+		if (e is InputEventMouseButton and e.pressed) or (e is InputEventKey and e.pressed and e.keycode == KEY_ESCAPE):
+			_toggle_blueprint())
+	Sfx.play_ui("switch_3.ogg", -6.0, 0.8)
+
+
+## Ekranın ortasına eğik lastik mühür vurulur, sonra solar.
+func _stamp_anim(word: String, col: Color) -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 31
+	add_child(layer)
+	var l := Label.new()
+	l.text = word
+	l.add_theme_font_size_override("font_size", 72)
+	l.add_theme_color_override("font_color", col)
+	l.add_theme_color_override("font_outline_color", Color(col, 0.5))
+	l.add_theme_constant_override("outline_size", 6)
+	var mono := SystemFont.new()
+	mono.font_names = PackedStringArray(["Consolas", "Courier New"])
+	mono.font_weight = 700
+	l.add_theme_font_override("font", mono)
+	layer.add_child(l)
+	l.reset_size()
+	var vs := get_viewport().get_visible_rect().size
+	l.pivot_offset = l.size * 0.5
+	l.position = vs * 0.5 - l.size * 0.5
+	l.rotation = -0.18
+	l.scale = Vector2.ONE * 1.8
+	l.modulate.a = 0.0
+	var tw := l.create_tween()
+	tw.tween_property(l, "scale", Vector2.ONE, 0.12).set_ease(Tween.EASE_IN)
+	tw.parallel().tween_property(l, "modulate:a", 1.0, 0.12)
+	tw.tween_callback(func() -> void: Sfx.play_ui("hydraulic_thunk.ogg", -2.0, 1.5))
+	tw.tween_interval(0.9)
+	tw.tween_property(l, "modulate:a", 0.0, 0.5)
+	tw.tween_callback(layer.queue_free)
 
 
 const LOAD_GROUPS := ["Avcı", "Saldırı", "Destek & Nakliye", "Deneysel", "Sivil", "Benim uçaklarım", "Diğer"]
@@ -2732,7 +2790,8 @@ func _build_ui() -> void:
 	# kısa etiket + açıklama ipucu: üst çubuk 1600 px'te de sığsın
 	for spec in [["Yeni", _new_craft, ""], ["Yükle", _open_load, ""], ["Kaydet", _save, ""],
 			["Üretim", func() -> void: ProductionDialog.open(self), "Seri üretim"],
-			["Tünel", _toggle_tunnel, "Rüzgâr tüneli: akış, stall, yük haritası"]]:
+			["Tünel", _toggle_tunnel, "Rüzgâr tüneli: akış, stall, yük haritası"],
+			["Çizim", _toggle_blueprint, "Teknik çizim: üç görünüş, ölçüler, onay mührü"]]:
 		var b := Button.new()
 		b.text = spec[0]
 		b.tooltip_text = spec[2]
@@ -3178,6 +3237,9 @@ func _flat(color: Color, radius: int) -> StyleBoxFlat:
 
 func _take_screenshot(path: String) -> void:
 	Game.args.erase("screenshot")
+	if Game.args.has("shot-blueprint"):
+		_toggle_blueprint()
+		await RenderingServer.frame_post_draw
 	# isteğe bağlı kamera: --shot-yaw=90 --shot-pitch=5 (derece), --shot-dist=30
 	if Game.args.has("shot-yaw"):
 		_yaw = deg_to_rad(float(Game.args["shot-yaw"]))

@@ -319,6 +319,61 @@ static func smoke_trail() -> GPUParticles3D:
 	return p
 
 
+## Vurulan uçağın yanarak düşüşü: turuncu alev çekirdeği + arkasında uzun kara duman izi
+## (parçacıklar dünyada kalır: uçağın düşüş yolu gökyüzünde görünür).
+static func burning_trail() -> Node3D:
+	_init_resources()
+	var root := Node3D.new()
+	root.name = "BurningTrail"
+	var fire := GPUParticles3D.new()
+	fire.amount = 90
+	fire.lifetime = 0.8
+	fire.local_coords = false
+	var fm := ParticleProcessMaterial.new()
+	fm.direction = Vector3(0, 0, 1)
+	fm.spread = 25.0
+	fm.initial_velocity_min = 2.0
+	fm.initial_velocity_max = 6.0
+	fm.gravity = Vector3(0, 3, 0)
+	fm.scale_min = 0.8
+	fm.scale_max = 1.6
+	fm.angle_min = -180.0
+	fm.angle_max = 180.0
+	fm.scale_curve = _grow_curve(1.0, 0.3)
+	fm.color_ramp = _ramp([Color(1, 0.95, 0.6, 1), Color(1, 0.5, 0.1, 0.9), Color(0.3, 0.1, 0.05, 0)])
+	fire.process_material = fm
+	fire.draw_pass_1 = _quad(_billboard_mat(false), 3.0)
+	fire.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	fire.visibility_aabb = AABB(Vector3(-2000, -2000, -2000), Vector3(4000, 4000, 4000))
+	root.add_child(fire)
+	var smoke := GPUParticles3D.new()
+	smoke.amount = 260
+	smoke.lifetime = 7.0
+	smoke.local_coords = false
+	var sm := ParticleProcessMaterial.new()
+	sm.direction = Vector3(0, 0, 1)
+	sm.spread = 10.0
+	sm.initial_velocity_min = 1.0
+	sm.initial_velocity_max = 3.0
+	sm.gravity = Vector3(0, 1.2, 0)
+	sm.damping_min = 0.5
+	sm.damping_max = 1.0
+	sm.scale_min = 0.8
+	sm.scale_max = 1.4
+	sm.angle_min = -180.0
+	sm.angle_max = 180.0
+	sm.scale_curve = _grow_curve(0.5, 3.5)
+	sm.color_ramp = _ramp([Color(0.06, 0.05, 0.05, 0.9), Color(0.12, 0.11, 0.1, 0.65), Color(0.35, 0.35, 0.35, 0.0)])
+	smoke.process_material = sm
+	smoke.draw_pass_1 = _quad(_billboard_mat(false), 4.0)
+	smoke.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	smoke.visibility_aabb = AABB(Vector3(-3000, -3000, -3000), Vector3(6000, 6000, 6000))
+	root.add_child(smoke)
+	fire.emitting = true
+	smoke.emitting = true
+	return root
+
+
 ## Yanan hedeften sürekli yükselen koyu duman.
 static func smoke_column() -> GPUParticles3D:
 	_init_resources()

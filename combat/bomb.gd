@@ -122,7 +122,7 @@ func _physics_process(delta: float) -> void:
 			print("BOMBA ÇARPTI: en yakın tanka %.1f m (yaş %.1f)" % [nd, _age])
 		if _age > ARM_TIME or kind == "bomblet":
 			var bl: Array = BLAST.get(kind, BLAST["normal"])
-			Damage.explosion(global_position, bl[0], bl[1], null)
+			Damage.explosion(global_position, bl[0], bl[1], null, shooter)
 			if kind == "heavy":
 				Effects.explosion(FloatingOrigin.world_root, global_position, Planet.up_at(global_position), 5.0)
 		queue_free()

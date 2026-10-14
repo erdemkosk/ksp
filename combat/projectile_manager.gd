@@ -85,7 +85,7 @@ func _physics_process(delta: float) -> void:
 				Sfx.play_at("bullet_whizz_%d.ogg" % (1 + randi() % 2), cp, 2.0, randf_range(0.85, 1.2), 200.0)
 				_whizz_cd = 0.06
 		if not hit.is_empty():
-			Damage.apply_hit(hit, _dmg[i], v)
+			Damage.apply_hit(hit, _dmg[i], v, shooter)
 			_remove(i)
 			continue
 		if _age[i] > LIFETIME or Planet.altitude(np) < -5.0:

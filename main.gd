@@ -33,6 +33,7 @@ var interaction: CockpitInteraction
 var pilot: PilotCharacter          ## EVA'daki pilot (yoksa null)
 var flight_stats: FlightStats       ## uçuş kaydı (uçuş sonu raporunda tasarım notları)
 var stress_fx: StressFx             ## yapı zorlanması: parça rengi, kanat bükülmesi, gıcırtı
+var kill_feedback: KillFeedback     ## vuruş hissi: isabet işareti, düşürme, yanarak düşüş, enkaz
 var audio: AudioManager
 
 var _time := 0.0
@@ -108,6 +109,9 @@ func _ready() -> void:
 	hud.camera = camera
 	hud.interaction = interaction
 	add_child(hud)
+	kill_feedback = KillFeedback.new()   # isabet işareti, düşürme şeridi, yanarak düşüş, enkaz
+	kill_feedback.main = self
+	add_child(kill_feedback)
 	flight_map = FlightMap.new()
 	flight_map.main = self
 	add_child(flight_map)
@@ -239,6 +243,10 @@ func _ready() -> void:
 		var et := preload("res://tests/engine_test.gd").new()
 		et.main = self
 		add_child.call_deferred(et)
+	if Game.args.has("killtest"):
+		var kt: Node = load("res://tests/kill_test.gd").new()
+		kt.main = self
+		add_child.call_deferred(kt)
 	if Game.args.has("partclicktest"):
 		var pct: Node = load("res://tests/partclick_test.gd").new()
 		pct.main = self

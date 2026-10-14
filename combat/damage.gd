@@ -6,11 +6,27 @@ class_name Damage
 static var vessel_hits := 0
 
 
+## İsabet geri bildirimi (KillFeedback yazar): func(target: Node, pos: Vector3, shooter: Object).
+## Hedefe "kim vurdu" damgası da burada vurulur (düşürmeyi kime yazacağımızı bilmek için).
+static var on_hit: Callable
+
+
+static func _notify(target: Node, pos: Vector3, shooter: Object) -> void:
+	if shooter == null or not is_instance_valid(shooter) or not is_instance_valid(target):
+		return
+	target.set_meta("hit_by", shooter)
+	target.set_meta("hit_ms", Time.get_ticks_msec())
+	if on_hit.is_valid():
+		on_hit.call(target, pos, shooter)
+
+
 ## Işın isabeti: vurulan şey araçsa ilgili parçaya, yer hedefiyse hedefe hasar.
-static func apply_hit(hit: Dictionary, damage: float, velocity: Vector3) -> void:
+static func apply_hit(hit: Dictionary, damage: float, velocity: Vector3, shooter: Object = null) -> void:
 	var collider: Object = hit.get("collider")
 	var pos: Vector3 = hit["position"]
 	var normal: Vector3 = hit["normal"]
+	if collider is Node:
+		_notify(collider, pos, shooter)
 	if collider is Vessel:
 		var v: Vessel = collider
 		vessel_hits += 1
@@ -50,7 +66,9 @@ static func apply_hit(hit: Dictionary, damage: float, velocity: Vector3) -> void
 
 
 ## Patlama: yarıçap içindeki tüm araç parçalarına ve yer hedeflerine mesafeyle azalan hasar.
-static func explosion(pos: Vector3, radius: float, max_damage: float, source: Object = null) -> void:
+## source: hasar görmeyen (ör. atan uçak); credit: isabet kime yazılır (bomba atanı kendi
+## bombasından da etkilenebilir, ama düşürme / imha yine ona yazılır)
+static func explosion(pos: Vector3, radius: float, max_damage: float, source: Object = null, credit: Object = null) -> void:
 	var root := FloatingOrigin.world_root
 	AudioManager.near_blast(pos, radius)
 	Effects.explosion(root, pos, Planet.up_at(pos), clampf(radius / 10.0, 1.0, 4.0))
@@ -59,6 +77,8 @@ static func explosion(pos: Vector3, radius: float, max_damage: float, source: Ob
 	for node in root.get_children():
 		if node is Vessel and node != source:
 			var v: Vessel = node
+			if v != credit and v.com_global().distance_to(pos) < radius * 1.2:
+				_notify(v, pos, credit)
 			for part in v.parts.duplicate():
 				var d: float = part.global_position.distance_to(pos)
 				if d < radius:
@@ -72,6 +92,7 @@ static func explosion(pos: Vector3, radius: float, max_damage: float, source: Ob
 		elif node is GroundTarget:
 			var d: float = node.blast_distance(pos) if node is Warship else node.global_position.distance_to(pos)
 			if d < radius:
+				_notify(node, pos, credit)
 				node.take_damage(max_damage * (1.0 - d / radius))
 
 

@@ -549,7 +549,7 @@ func _physics_process(delta: float) -> void:
 
 func _detonate() -> void:
 	var gp := global_position
-	Damage.explosion(gp, float(_p["blast_r"]), float(_p["blast_dmg"]), null)
+	Damage.explosion(gp, float(_p["blast_r"]), float(_p["blast_dmg"]), null, shooter)
 	# patlama yakınındaki seyir / gemi savar füzeleri de düşer (önleme)
 	for m in active.duplicate():
 		if m != self and is_instance_valid(m) and m.guidance in ["cruise", "ship"] and m.global_position.distance_to(gp) < float(_p["blast_r"]) * 1.5:
