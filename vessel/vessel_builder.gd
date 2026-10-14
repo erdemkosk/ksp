@@ -393,6 +393,8 @@ static func apply_tweaks(part: Part, entry: Dictionary) -> void:
 				m.axis_mask = Vector3(float(a[0]), float(a[1]), float(a[2]))
 			if entry.has("deflect"):
 				m.max_deflection = deg_to_rad(float(entry["deflect"]))
+			if entry.has("auth"):
+				m.authority = clampf(float(entry["auth"]), -1.5, 1.5)
 		elif m is EngineModule:
 			if entry.get("no_ab", false):
 				m.no_ab = true

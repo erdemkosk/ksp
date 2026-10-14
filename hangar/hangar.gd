@@ -151,7 +151,9 @@ func _ready() -> void:
 	elif Game.hangar_action == "new":
 		_new_craft.call_deferred()
 	Game.hangar_action = ""
-	if Game.args.has("hovertest"):
+	if Game.args.has("ctltest"):
+		_ctl_test.call_deferred()
+	elif Game.args.has("hovertest"):
 		_hover_test.call_deferred()
 	elif Game.args.has("hangartreetest"):
 		_tree_test.call_deferred()
@@ -298,6 +300,40 @@ func _tree_test() -> void:
 				await get_tree().process_frame
 			await RenderingServer.frame_post_draw
 			get_viewport().get_texture().get_image().save_png(String(Game.args["shotdir"]) + "/gizmo_%d.png" % t)
+	get_tree().quit()
+
+
+## --ctltest: kumanda testi (↓ basılı → yüzeyler sapar, bırakınca döner) ve kontrol yüzeyi paneli.
+func _ctl_test() -> void:
+	await get_tree().create_timer(1.5).timeout
+	var report := func(tag: String) -> void:
+		var s := PackedStringArray()
+		for m in _preview.modules:
+			if m is ControlSurfaceModule:
+				s.append("%s %+.0f°" % [m.part.part_id, rad_to_deg(m.deflection)])
+		print("CTL %s: %s" % [tag, ", ".join(s)])
+	for key in [KEY_DOWN, KEY_RIGHT]:
+		var e := InputEventKey.new()
+		e.keycode = key
+		e.physical_keycode = key
+		e.pressed = true
+		Input.parse_input_event(e)
+		await get_tree().create_timer(0.6).timeout
+		report.call("%s basılı" % OS.get_keycode_string(key))
+		e = e.duplicate()
+		e.pressed = false
+		Input.parse_input_event(e)
+		await get_tree().create_timer(0.8).timeout
+		report.call("bırakıldı")
+	# bir elevonun panelini aç (yetki / eksen / dene)
+	for p in _preview.parts:
+		if p.part_id == "elevon" or p.part_id == "stabilator":
+			_open_part_panel(p)
+			break
+	if Game.args.has("shotdir"):
+		await get_tree().create_timer(0.5).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(String(Game.args["shotdir"]) + "/ctl_panel.png")
 	get_tree().quit()
 
 
@@ -909,6 +945,90 @@ func _tweak_editor(parent: Control, idx: int, entry: Dictionary, part: Part) -> 
 			_slider(parent, "Sapma", 5.0, 35.0, 1.0, float(entry.get("deflect", base_deg)), "±%d°", func(x: float) -> void:
 				_commit_entry(idx, func(e: Dictionary) -> void:
 					e["deflect"] = x))
+			# KSP gibi yetki: ne kadar tepki versin (eksi = ters çalışır)
+			_slider(parent, "Yetki", -150.0, 150.0, 10.0, float(entry.get("auth", 1.0)) * 100.0, "%+d%%", func(x: float) -> void:
+				_commit_entry(idx, func(e: Dictionary) -> void:
+					if absf(x - 100.0) < 1.0:
+						e.erase("auth")
+					else:
+						e["auth"] = x / 100.0))
+			# hangi eksene çalışsın (kendiliğinden konumundan bulunur; burada kapatılabilir)
+			var axes: Array = entry.get("axes", [1.0, 1.0, 1.0])
+			var row := HBoxContainer.new()
+			for spec in [["Yunuslama", 0], ["Yatış", 2], ["Sapma", 1]]:
+				var ax_i: int = spec[1]
+				var cb := CheckBox.new()
+				cb.text = spec[0]
+				cb.focus_mode = Control.FOCUS_NONE
+				cb.button_pressed = float(axes[ax_i]) > 0.5
+				cb.disabled = absf(m.axis_weights[ax_i]) < 0.01 and float(axes[ax_i]) > 0.5   # bu eksene zaten etkisi yok
+				cb.tooltip_text = "Bu yüzey %s komutuna çalışsın" % String(spec[0]).to_lower()
+				cb.toggled.connect(func(on: bool) -> void:
+					_commit_entry(idx, func(e: Dictionary) -> void:
+						var a: Array = (e.get("axes", [1.0, 1.0, 1.0]) as Array).duplicate()
+						a[ax_i] = 1.0 if on else 0.0
+						if a == [1.0, 1.0, 1.0]:
+							e.erase("axes")
+						else:
+							e["axes"] = a))
+				row.add_child(cb)
+			parent.add_child(row)
+			var test := Button.new()
+			test.text = "Hareketi dene"
+			test.focus_mode = Control.FOCUS_NONE
+			test.tooltip_text = "Yüzey iki yöne tam sapar ve yerine döner. Bütün uçak için: ok tuşları (yunus / yatış), , . (sapma)"
+			test.pressed.connect(func() -> void: _sweep_surface(m))
+			parent.add_child(test)
+			var hint := Label.new()
+			hint.text = "Bütün uçağı dene: ↑↓ yunuslama · ←→ yatış · , . sapma"
+			hint.add_theme_font_size_override("font_size", 11)
+			hint.add_theme_color_override("font_color", Color(0.65, 0.72, 0.8))
+			parent.add_child(hint)
+
+## Tek yüzeyi dene: +tam → −tam → 0 (yerine döner), gerçek dönüş hızıyla.
+func _sweep_surface(m: ControlSurfaceModule) -> void:
+	if not is_instance_valid(m):
+		return
+	Sfx.play_ui("hydraulic_thunk.ogg", -10.0, 1.4)
+	for target in [1.0, -1.0, 0.0]:
+		var goal: float = target * m.max_deflection * signf(m.authority if m.authority != 0.0 else 1.0)
+		while is_instance_valid(m) and absf(m.deflection - goal) > 0.001:
+			var dt := get_process_delta_time()
+			m.deflection = move_toward(m.deflection, goal, m.rate * dt)
+			var vis := m.part.get_node_or_null("Visual") as Node3D
+			if vis:
+				vis.rotation.x = m.deflection
+			await get_tree().process_frame
+		await get_tree().create_timer(0.15).timeout
+
+
+var _ctl_active := false
+
+
+## Hangar kumanda testi: ok tuşları / , . basılıyken önizlemedeki bütün kontrol yüzeyleri o
+## komuta göre sapar, bırakınca yerine döner (hangi yüzeyin hangi eksene çalıştığı görünür).
+func _update_control_test(delta: float) -> void:
+	if not is_instance_valid(_preview):
+		return
+	var typing := (_name_edit and _name_edit.has_focus()) or (_search and _search.has_focus())
+	var pitch := 0.0
+	var roll := 0.0
+	var yaw := 0.0
+	if not typing:
+		pitch = (1.0 if Input.is_key_pressed(KEY_DOWN) else 0.0) - (1.0 if Input.is_key_pressed(KEY_UP) else 0.0)
+		roll = (1.0 if Input.is_key_pressed(KEY_RIGHT) else 0.0) - (1.0 if Input.is_key_pressed(KEY_LEFT) else 0.0)
+		yaw = (1.0 if Input.is_key_pressed(KEY_PERIOD) else 0.0) - (1.0 if Input.is_key_pressed(KEY_COMMA) else 0.0)
+	var any := pitch != 0.0 or roll != 0.0 or yaw != 0.0
+	if not any and not _ctl_active:
+		return
+	var desired := Vector3(pitch, -yaw, -roll)
+	var moving := false
+	for m in _preview.modules:
+		if m is ControlSurfaceModule:
+			m.preview_tick(desired, delta)
+			moving = moving or absf(m.deflection) > 0.001
+	_ctl_active = any or moving
+
 
 # ------------------------------------------------------------------ biçim düzenleyicileri
 
@@ -1464,6 +1584,7 @@ func _process(delta: float) -> void:
 		_update_camera()
 	_update_ghost()
 	_update_hover()
+	_update_control_test(delta)
 	if _gizmo and _gizmo.visible:
 		if _drag_axis < 0:
 			_gizmo.hover = _gizmo.pick(_cam, _mouse())

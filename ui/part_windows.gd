@@ -144,6 +144,8 @@ func _toggle(part: Part) -> void:
 					var mask: Vector3 = m.axis_mask
 					mask[i] = 0.0 if mask[i] > 0.5 else 1.0
 					m.axis_mask = mask)
+			_slider(w.body, "Yetki", clampf(absf(m.authority), 0.1, 1.0), func(x: float) -> void:
+				m.authority = x * signf(m.authority if m.authority != 0.0 else 1.0))
 		elif m is CockpitModule:
 			buttons["canopy"] = _button(row, "Kanopi", func() -> void: m.canopy_open = not m.canopy_open)
 			buttons["lights"] = _button(row, "Işıklar", func() -> void: part.vessel.lights_on = not part.vessel.lights_on)

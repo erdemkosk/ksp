@@ -9,6 +9,8 @@ var rate := deg_to_rad(90.0)
 var axis_weights := Vector3.ZERO
 ## Hangarda kapatılan eksenler 0 (x = pitch, y = yaw, z = roll).
 var axis_mask := Vector3.ONE
+## Yetki (KSP "authority limiter"): komut bununla çarpılır; 0.5 = yarım tepki, eksi = ters çalışır.
+var authority := 1.0
 
 var _visual: Node3D
 ## Ağır hasarda yüzey o anki açısında sıkışabilir.
@@ -38,7 +40,7 @@ func physics_tick(delta: float) -> void:
 	_compute_weights()  # yakıt azaldıkça ağırlık merkezi kayar
 	# İstenen tork (gövde ekseninde): burun yukarı = +X, sağa sapma = -Y, sağa yatış = -Z
 	var desired := Vector3(vessel.ctrl_pitch, -vessel.ctrl_yaw, -vessel.ctrl_roll)
-	var command := clampf(axis_weights.dot(desired), -1.0, 1.0)
+	var command := clampf(axis_weights.dot(desired) * authority, -1.0, 1.0)
 	# hidrolik basınç: hız ve sapma payı basınçla düşer
 	var hyd := vessel.hydraulics
 	if not jammed:
@@ -46,6 +48,18 @@ func physics_tick(delta: float) -> void:
 	if _visual:
 		_visual.rotation.x = deflection
 	super.physics_tick(delta)
+
+
+## Hangar kumanda testi: fizik çalışmadan yüzeyi istenen komuta (yunus, -sapma, -yatış) göre
+## gerçek hızında döndürür. Komut sıfırlanınca yüzey yerine (0°) döner.
+func preview_tick(desired: Vector3, delta: float) -> void:
+	if _visual == null:
+		_visual = part.get_node_or_null("Visual")
+	_compute_weights()
+	var command := clampf(axis_weights.dot(desired) * authority, -1.0, 1.0)
+	deflection = move_toward(deflection, command * max_deflection, rate * delta)
+	if _visual:
+		_visual.rotation.x = deflection
 
 
 func on_damaged(amount: float) -> void:
