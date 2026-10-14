@@ -177,7 +177,8 @@ func _physics_process(delta: float) -> void:
 			vessel.ctrl_pitch = _limit_g(clampf(_damp_pitch(pitch, delta) + pitch_trim, -1.0, 1.0), delta, g_tolerance() - 0.1)
 		_:
 			var k := _stick_force()
-			vessel.ctrl_pitch = clampf(pitch * k + pitch_trim, -1.0, 1.0)
+			# çubuk ağırlığı yalnız pilotun girdisine; eller serbestken SAS / trim düzeltmesi tam geçer
+			vessel.ctrl_pitch = clampf(pitch * (k if absf(_pitch) > 0.05 else 1.0) + pitch_trim, -1.0, 1.0)
 			yaw *= k
 			roll *= k
 	if fcs != "fbw":
@@ -362,7 +363,10 @@ func _limit_g(pitch: float, delta: float, gmax_override := 0.0) -> float:
 	var cap_up := clampf(1.0 - (w_pred - w_up * 0.92) / (w_up * 0.3), 0.0, 1.0)
 	var cap_dn := clampf(1.0 - (-w_pred - w_dn * 0.92) / (w_dn * 0.3), 0.0, 1.0)
 	_rate_cap = lerpf(_rate_cap, cap_up if pitch > 0.0 else cap_dn, 1.0 - exp(-delta / 0.04))
-	var out := pitch * (_auth if pitch > 0.0 else _auth_neg) * _rate_cap
+	# yetki kısma yalnız pilotun çubuğuna: eller serbestken SAS / otomatik trim düzeltmesi kısılmaz
+	# (kısılınca burnu kalkan uçak +4 G'deyken bile "negatif sınır" diye burun indiremiyordu)
+	var stick := absf(_pitch) > 0.05
+	var out := pitch * ((_auth if pitch > 0.0 else _auth_neg) if stick else 1.0) * _rate_cap
 	# kararsız uçak (ters ok, küçük kararlılık payı) kumanda sıfırken de burnunu kaldırmaya devam
 	# eder: sınır aşılınca aktif karşı kumanda verilir
 	if w_pred > w_up:

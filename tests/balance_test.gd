@@ -76,4 +76,7 @@ func _watch(v: Vessel, pc: PlayerController, secs: float) -> Dictionary:
 		r["q"] = maxf(r["q"], absf(v.local_angular_velocity().x))
 		r["strain"] = maxf(r["strain"], pc.g_strain)
 		r["out"] = r["out"] or pc.blackout
+		if Game.args.has("balverbose") and fmod(t, 0.25) < get_physics_process_delta_time():
+			print("BALV t=%.2f G=%+.2f q=%+.3f α=%+.1f kumanda=%+.2f trim=%+.2f hız=%d irt=%d" % [
+				t, v.g_force, v.local_angular_velocity().x, v.aoa_deg(), v.ctrl_pitch, pc._auto_trim, v.airspeed() * 3.6, v.altitude()])
 	return r
