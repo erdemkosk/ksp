@@ -151,7 +151,9 @@ func _ready() -> void:
 	elif Game.hangar_action == "new":
 		_new_craft.call_deferred()
 	Game.hangar_action = ""
-	if Game.args.has("hangartreetest"):
+	if Game.args.has("hovertest"):
+		_hover_test.call_deferred()
+	elif Game.args.has("hangartreetest"):
 		_tree_test.call_deferred()
 	elif Game.args.has("hangartest"):
 		_self_test.call_deferred()
@@ -296,6 +298,73 @@ func _tree_test() -> void:
 				await get_tree().process_frame
 			await RenderingServer.frame_post_draw
 			get_viewport().get_texture().get_image().save_png(String(Game.args["shotdir"]) + "/gizmo_%d.png" % t)
+	get_tree().quit()
+
+
+## --hovertest: paletten gerçek tıkla parça seç, fareyi sahnenin ortasına götür; hayalet çıkıyor mu,
+## imlecin altında hangi arayüz kontrolü var (görünmez bir kontrol yerleştirmeyi engelliyor mu).
+func _hover_test() -> void:
+	await get_tree().create_timer(1.5).timeout
+	var card: Button = null
+	for k in _cards:
+		var b: Button = _cards[k]
+		if b.is_visible_in_tree() and b.get_global_rect().end.y < 700.0 and Career.is_unlocked(k):
+			card = b
+			break
+	var cpos := card.get_global_rect().get_center()
+	var mv0 := InputEventMouseMotion.new()
+	mv0.position = cpos
+	mv0.global_position = cpos
+	Input.parse_input_event(mv0)
+	for i in 3:
+		await get_tree().process_frame
+	var h0 := get_viewport().gui_get_hovered_control()
+	print("HOVER kart=%s rect=%s görünür=%s kilitli=%s devre_dışı=%s  kartın üstündeki=%s" % [card.get_path(), card.get_global_rect(),
+		card.is_visible_in_tree(), false, card.disabled, h0.get_path() if h0 else "yok"])
+	for pressed in [true, false]:
+		var e := InputEventMouseButton.new()
+		e.button_index = MOUSE_BUTTON_LEFT
+		e.pressed = pressed
+		e.position = cpos
+		e.global_position = cpos
+		Input.parse_input_event(e)
+		await get_tree().process_frame
+	if Game.args.has("shotdir"):
+		var mvc := InputEventMouseMotion.new()
+		mvc.position = cpos + Vector2(20, 10)
+		mvc.global_position = mvc.position
+		Input.parse_input_event(mvc)
+		Input.warp_mouse(cpos + Vector2(20, 10))
+		for i in 3:
+			await get_tree().process_frame
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(String(Game.args["shotdir"]) + "/hover_card.png")
+	var vs := get_viewport().get_visible_rect().size
+	for spot in [vs * 0.5, vs * Vector2(0.45, 0.4), vs * Vector2(0.3, 0.75)]:
+		var mv := InputEventMouseMotion.new()
+		mv.position = spot
+		mv.global_position = spot
+		Input.parse_input_event(mv)
+		Input.warp_mouse(spot)
+		for i in 3:
+			await get_tree().process_frame
+		var hov := get_viewport().gui_get_hovered_control()
+		print("HOVER seçili=%s nokta=%s üstteki=%s (%s) yerleşim=%s hayalet=%s" % [_selected, spot,
+			hov.get_path() if hov else "yok", hov.get_class() if hov else "", not _placement.is_empty(),
+			is_instance_valid(_ghost) and _ghost.visible])
+	# takılması gereken parça, boş köşe: imlecin ucunda yüzmeli
+	_select("wing_main")
+	var corner := vs * Vector2(0.25, 0.2)
+	var mv2 := InputEventMouseMotion.new()
+	mv2.position = corner
+	mv2.global_position = corner
+	Input.parse_input_event(mv2)
+	Input.warp_mouse(corner)
+	for i in 3:
+		await get_tree().process_frame
+	var gpos := _cam.unproject_position(_ghost.global_position) if is_instance_valid(_ghost) else Vector2.ZERO
+	print("HOVER kanat boşlukta: yerleşim=%s hayalet görünür=%s hayaletin ekran konumu=%s imleç=%s" % [
+		not _placement.is_empty(), is_instance_valid(_ghost) and _ghost.visible, gpos, corner])
 	get_tree().quit()
 
 
@@ -1794,14 +1863,54 @@ func _make_ghost_def(def: Dictionary, mirrored: bool, id: String) -> Node3D:
 	return root
 
 
+var _ui_root: Control
+var _cursor_icon: TextureRect
+
+
+## Seçili parçanın küçük resmi imlecin ucunda (imleç paneldeyken: tıklamanın işe yaradığı görülsün).
+func _update_cursor_icon(show: bool) -> void:
+	if not is_instance_valid(_cursor_icon):
+		if not is_instance_valid(_ui_root):
+			return
+		_cursor_icon = TextureRect.new()
+		_cursor_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_cursor_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_cursor_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		_cursor_icon.size = Vector2(72, 72)
+		_cursor_icon.modulate = Color(1, 1, 1, 0.9)
+		_ui_root.add_child(_cursor_icon)
+	_cursor_icon.visible = show and _cards.has(_selected)
+	if _cursor_icon.visible:
+		_cursor_icon.texture = (_cards[_selected] as Button).icon
+		_cursor_icon.position = get_viewport().get_mouse_position() + Vector2(10, 10)
+		_cursor_icon.move_to_front()
+
+
 func _update_ghost() -> void:
 	if _selected.is_empty() or not is_instance_valid(_ghost):
+		_update_cursor_icon(false)
 		return
 	var over_ui := get_viewport().gui_get_hovered_control() != null and _fake_mouse.x < 0.0
+	_update_cursor_icon(over_ui)
 	_placement = {} if over_ui else _compute_placement(_mouse())
 	for k in _ghost_nodes:
 		_ghost_nodes[k].visible = false
 	if _placement.is_empty():
+		# KSP gibi: takılacak yer yokken de parça imlecin ucunda yüzer (soluk); uçağa yaklaşınca
+		# yapışır ve yeşillenir. Bu hâlde tık yerleştirmez.
+		if not over_ui and is_instance_valid(_cam):
+			var mp := _mouse()
+			var o := _cam.project_ray_origin(mp)
+			var dir := _cam.project_ray_normal(mp)
+			var n := -_cam.global_basis.z
+			var denom := dir.dot(n)
+			var dist := (_target - o).dot(n) / denom if absf(denom) > 0.01 else 10.0
+			var at := o + dir * clampf(dist, 3.0, 200.0)
+			var g := _ghost_for(0, 0, false)
+			var local := _craft_root.global_transform.affine_inverse() * at
+			g.transform = Transform3D(Basis.from_euler(_user_rot * (PI / 180.0)) * Basis.from_scale(Vector3.ONE * _effective_scale()), local)
+			g.visible = true
+			_ghost_mat.albedo_color = Color(0.85, 0.9, 1.0, 0.3)
 		return
 	var pos: Vector3 = _placement["pos"]
 	var rot: Vector3 = _placement["rot"]
@@ -2755,6 +2864,7 @@ func _build_ui() -> void:
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.theme = _theme
+	_ui_root = root
 	layer.add_child(root)
 
 	# üst çubuk
